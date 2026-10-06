@@ -16,7 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                       keyphrases: store.config.keyphrases,
                       historyBonus: history.bonusTable(),
                       recent: history.recent(limit: SearchEngine.maxResults),
-                      includeHidden: store.config.includeHidden)
+                      includeHidden: store.config.includeHidden,
+                      indexSettings: IndexSettings(config: store.config))
     }
 
     private func makePanel() -> SearchPanelController {
@@ -24,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.onActivate = { [unowned self] result, open in self.activate(result, open: open) }
         p.onSettings = { [unowned self] in self.openSettings() }
         p.onAddKeyphrase = { [unowned self] result in
-            self.store.focusKeyphraseID = self.store.addKeyphrase(path: result.path)
+            if let result { self.store.focusKeyphraseID = self.store.addKeyphrase(path: result.path) }
             self.openSettings(tab: .keyphrases)
         }
         p.onWillShow = { [unowned self] in self.indexManager.panelWillShow() }

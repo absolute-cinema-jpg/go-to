@@ -27,14 +27,15 @@ enum FinderRevealer {
                 try
                     set collapsed of w to false
                 end try
+                -- Front first: "select" acts on the frontmost Finder window. ("reveal" is avoided
+                -- because Finder may open an extra window for it even when w already shows the folder.)
+                set index of w to 1
                 if enterFolder or theParent is missing value then
                     set target of w to theItem
                 else
                     set target of w to theParent
-                    reveal theItem
                     select theItem
                 end if
-                set index of w to 1
                 activate
             end tell
         end revealItem

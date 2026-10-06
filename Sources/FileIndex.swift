@@ -20,6 +20,8 @@ struct IndexSettings {
     var excludedPaths: Set<String> = []
     var includeHidden = false
     var signature: UInt64 = 0
+    /// Stop scanning after this many items (used for on-demand keyphrase folder scans).
+    var maxEntries = Int.max
 
     init(config: AppConfig) {
         var roots: [String] = []
@@ -115,6 +117,18 @@ final class FileIndex {
         return (rootParents[root] ?? "") + "/" + comps.reversed().joined(separator: "/")
     }
 
+    /// Entries inside folder `path`. Pre-order storage makes them one contiguous run straight
+    /// after the folder. Nil if the folder isn't in this index.
+    func subtree(of path: String) -> Range<Int>? {
+        let target = path.nfc
+        let h = pathHash(target)
+        guard let t = pathHashes.firstIndex(of: h), isDirectory(t), self.path(at: t) == target else { return nil }
+        let depth = entries[t].depth
+        var end = t + 1
+        while end < entries.count && entries[end].depth > depth { end += 1 }
+        return (t + 1)..<end
+    }
+
     func isDirectory(_ i: Int) -> Bool { entries[i].flags & EntryFlag.directory != 0 }
     func isPackage(_ i: Int) -> Bool { entries[i].flags & EntryFlag.package != 0 }
 }
@@ -141,6 +155,7 @@ enum IndexBuilder {
             defer { fts_close(fts) }
 
             while let ent = fts_read(fts) {
+                if entries.count >= settings.maxEntries { break }
                 if entries.count & 2047 == 0 {
                     if isCancelled() { return nil }
                     if entries.count & 8191 == 0 { progress?(entries.count) }

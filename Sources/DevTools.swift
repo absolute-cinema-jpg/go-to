@@ -53,7 +53,7 @@ enum DevTools {
 
         let engine = SearchEngine()
         let ctx = SearchContext(index: index, keyphrases: config.keyphrases, historyBonus: [:], recent: [],
-                                includeHidden: config.includeHidden)
+                                includeHidden: config.includeHidden, indexSettings: IndexSettings(config: config))
 
         if let snapshot {
             _ = NSApplication.shared

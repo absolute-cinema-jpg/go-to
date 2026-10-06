@@ -16,7 +16,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Go To Settings"
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.appearance = NSAppearance(named: .aqua)
         window.backgroundColor = Theme.panelBG
         window.isMovableByWindowBackground = true
         window.minSize = NSSize(width: 680, height: 460)
@@ -65,7 +65,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color.gtPanel)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
     }
 
     private var header: some View {
@@ -141,18 +141,18 @@ struct GTButtonStyle: ButtonStyle {
                 .font(.system(size: 10, weight: .bold))
                 .tracking(0.9)
                 .textCase(.uppercase)
-                .foregroundColor(prominent ? Color.black.opacity(0.82) : (hover ? .gtText : Color(white: 0.78)))
+                .foregroundColor(prominent ? Color.white : (hover ? .gtText : Color.gtText2))
                 .padding(.horizontal, 12)
                 .frame(height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
                         .fill(prominent
                               ? Color.gtAccent.opacity(pressed ? 0.75 : (hover ? 1 : 0.92))
-                              : Color(white: pressed ? 0.13 : (hover ? 0.2 : 0.165)))
+                              : Color(white: pressed ? 0.88 : (hover ? 0.96 : 1.0)))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(prominent ? Color.white.opacity(0.15) : Color(white: 0.26), lineWidth: 1)
+                        .strokeBorder(prominent ? Color.white.opacity(0.15) : Color.gtBorder, lineWidth: 1)
                 )
                 .opacity(isEnabled ? 1 : 0.4)
                 .onHover { hover = $0 }
@@ -172,7 +172,7 @@ struct GTIconButton: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(hover ? (danger ? .gtDanger : .gtText) : .gtText3)
                 .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 4).fill(hover ? Color(white: 0.18) : .clear))
+                .background(RoundedRectangle(cornerRadius: 4).fill(hover ? Color.gtAccent.opacity(0.1) : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -187,11 +187,11 @@ struct GTToggleStyle: ToggleStyle {
             Spacer()
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
                 Capsule()
-                    .fill(configuration.isOn ? Color.gtAccent : Color(white: 0.2))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                    .fill(configuration.isOn ? Color.gtAccent : Color(white: 0.82))
+                    .overlay(Capsule().strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
                     .frame(width: 32, height: 18)
                 Circle().fill(Color.white.opacity(0.95)).frame(width: 14, height: 14).padding(2)
-                    .shadow(color: .black.opacity(0.3), radius: 1, y: 0.5)
+                    .shadow(color: .black.opacity(0.18), radius: 1, y: 0.5)
             }
             .animation(.easeOut(duration: 0.12), value: configuration.isOn)
             .onTapGesture { configuration.isOn.toggle() }
@@ -220,7 +220,7 @@ struct GTSection<Content: View, Accessory: View>: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 32)
-            .background(Color(white: 0.145))
+            .background(Color.gtHeader)
             Rectangle().fill(Color.gtEtchDark).frame(height: 1)
             content
         }
@@ -286,7 +286,7 @@ private struct KeyphrasesPane: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Keyphrases").font(.system(size: 17, weight: .semibold)).foregroundColor(.gtText)
-                Text("Type a keyphrase exactly and press ↵ to jump straight to its target. Follow it with “/” to browse inside a folder.")
+                Text("Type a keyphrase exactly and press ↵ to jump straight to its target. Add a space and more text to search inside it (“pph tmp”), or “/” to browse it.")
                     .font(.system(size: 11.5)).foregroundColor(.gtText2)
             }
 
@@ -312,11 +312,13 @@ private struct KeyphrasesPane: View {
                     } else {
                         ScrollView {
                             LazyVStack(spacing: 6) {
-                                ForEach($store.config.keyphrases) { $kp in
-                                    KeyphraseRow(kp: $kp,
+                                // Rows get values plus id-based bindings, never bindings into the array:
+                                // an index-based binding crashes if its row is deleted while being edited.
+                                ForEach(store.config.keyphrases) { kp in
+                                    KeyphraseRow(kp: kp, store: store,
                                                  isDuplicate: duplicates.contains(kp.normalizedPhrase),
                                                  focused: $focused,
-                                                 onDelete: { store.config.keyphrases.removeAll { $0.id == kp.id } })
+                                                 onDelete: { delete(kp.id) })
                                 }
                             }
                             .padding(.horizontal, 14).padding(.bottom, 12)
@@ -359,6 +361,11 @@ private struct KeyphrasesPane: View {
         .onChange(of: store.focusKeyphraseID) { _ in consumePendingFocus() }
     }
 
+    private func delete(_ id: UUID) {
+        focused = nil // end editing first so the field can't write back into a removed row
+        DispatchQueue.main.async { store.config.keyphrases.removeAll { $0.id == id } }
+    }
+
     private func consumePendingFocus() {
         guard let id = store.focusKeyphraseID else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -369,16 +376,23 @@ private struct KeyphrasesPane: View {
 }
 
 private struct KeyphraseRow: View {
-    @Binding var kp: Keyphrase
+    let kp: Keyphrase
+    @ObservedObject var store: ConfigStore
     let isDuplicate: Bool
     var focused: FocusState<UUID?>.Binding
     let onDelete: () -> Void
+
+    private var phrase: Binding<String> {
+        let id = kp.id
+        return Binding(get: { store.config.keyphrases.first { $0.id == id }?.phrase ?? "" },
+                       set: { value in store.updateKeyphrase(id) { $0.phrase = value } })
+    }
 
     var body: some View {
         let full = kp.path.expandingTilde
         let exists = FileManager.default.fileExists(atPath: full)
         HStack(spacing: 10) {
-            TextField("phrase", text: $kp.phrase)
+            TextField("phrase", text: phrase)
                 .focused(focused, equals: kp.id)
                 .modifier(GTTextFieldModifier(invalid: isDuplicate || kp.phrase.trimmed.isEmpty,
                                               focused: focused.wrappedValue == kp.id, monospaced: true))
@@ -397,7 +411,7 @@ private struct KeyphraseRow: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Color(white: 0.105)))
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.gtPanel))
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { choose() }
             .help(full)
@@ -407,7 +421,7 @@ private struct KeyphraseRow: View {
     }
 
     private func choose() {
-        if let p = choosePath(startingAt: kp.path) { kp.path = p }
+        if let p = choosePath(startingAt: kp.path) { store.updateKeyphrase(kp.id) { $0.path = p } }
     }
 }
 
@@ -431,11 +445,11 @@ private struct IndexPane: View {
                             }
                         }.help("Add a folder to index")
                     }) {
-                        listRows(store.config.searchRoots, icon: true) { store.config.searchRoots.remove(atOffsets: IndexSet(integer: $0)) }
+                        listRows(store.config.searchRoots, icon: true) { item in store.config.searchRoots.removeAll { $0 == item } }
                     }
                     GTSection("Excluded") {
                         VStack(spacing: 0) {
-                            listRows(store.config.excludes, icon: false) { store.config.excludes.remove(atOffsets: IndexSet(integer: $0)) }
+                            listRows(store.config.excludes, icon: false) { item in store.config.excludes.removeAll { $0 == item } }
                             HStack(spacing: 8) {
                                 TextField("Folder name or ~/path", text: $newExclude, onCommit: addExclude)
                                     .modifier(GTTextFieldModifier())
@@ -499,7 +513,7 @@ private struct IndexPane: View {
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.gtBorder, lineWidth: 1))
     }
 
-    private func listRows(_ items: [String], icon: Bool, remove: @escaping (Int) -> Void) -> some View {
+    private func listRows(_ items: [String], icon: Bool, remove: @escaping (String) -> Void) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 HStack(spacing: 8) {
@@ -512,11 +526,11 @@ private struct IndexPane: View {
                     Text(item).font(.system(size: 12, design: item.contains("/") ? .default : .monospaced))
                         .foregroundColor(.gtText).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    GTIconButton(systemName: "xmark", danger: true) { remove(i) }
+                    GTIconButton(systemName: "xmark", danger: true) { remove(item) }
                 }
                 .padding(.leading, 12).padding(.trailing, 6)
                 .frame(height: 32)
-                .background(i % 2 == 1 ? Color.white.opacity(0.015) : .clear)
+                .background(i % 2 == 1 ? Color.black.opacity(0.025) : .clear)
             }
         }
         .padding(.vertical, 4)

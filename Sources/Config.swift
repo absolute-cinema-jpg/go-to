@@ -96,6 +96,12 @@ final class ConfigStore: ObservableObject {
         }
     }
 
+    /// Edits a keyphrase by id; does nothing if it has been deleted meanwhile.
+    func updateKeyphrase(_ id: UUID, _ change: (inout Keyphrase) -> Void) {
+        guard let i = config.keyphrases.firstIndex(where: { $0.id == id }) else { return }
+        change(&config.keyphrases[i])
+    }
+
     @discardableResult
     func addKeyphrase(path: String, phrase: String? = nil) -> UUID {
         let display = path.abbreviatingHome

@@ -17,7 +17,7 @@ final class SearchPanel: NSPanel {
         hidesOnDeactivate = false
         animationBehavior = .none
         isReleasedWhenClosed = false
-        appearance = NSAppearance(named: .darkAqua)
+        appearance = NSAppearance(named: .aqua)
     }
 
     override var canBecomeKey: Bool { true }
@@ -51,7 +51,7 @@ private final class PanelBackgroundView: NSView {
         NSGradient(starting: Theme.headerTop.withAlphaComponent(0.55), ending: Theme.headerBottom.withAlphaComponent(0.55))?.draw(in: header, angle: 90)
         Theme.etchDark.setFill()
         NSRect(x: 0, y: headerHeight - 1, width: r.width, height: 1).fill()
-        NSColor(white: 1, alpha: 0.05).setFill()
+        NSColor(white: 1, alpha: 0.6).setFill()
         NSRect(x: 0, y: 1, width: r.width, height: 1).fill()
 
         // Accent marker beside the title.
@@ -211,7 +211,12 @@ final class ResultRowView: NSView {
         result = r
         icon.image = IconCache.icon(for: r.path)
         let parent = (r.path as NSString).deletingLastPathComponent
-        subtitle.stringValue = parent.isEmpty ? "/" : parent.abbreviatingHome
+        if let scope = r.scope, parent == scope.dir || parent.hasPrefix(scope.dir + "/") {
+            let inner = String(parent.dropFirst(scope.dir.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            subtitle.stringValue = inner.isEmpty ? scope.phrase : "\(scope.phrase) › \(inner)"
+        } else {
+            subtitle.stringValue = parent.isEmpty ? "/" : parent.abbreviatingHome
+        }
         if let kp = r.keyphrase {
             kindTag.text = kp
             kindTag.style = .accent
@@ -250,7 +255,7 @@ final class ResultRowView: NSView {
         para.lineBreakMode = .byTruncatingTail
         s.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: s.length))
         title.attributedStringValue = s
-        subtitle.textColor = isSelected ? Theme.textSecondary.blended(withFraction: 0.25, of: .white) : Theme.textSecondary
+        subtitle.textColor = isSelected ? Theme.textSecondary.blended(withFraction: 0.25, of: .black) : Theme.textSecondary
         needsDisplay = true
     }
 
@@ -271,13 +276,13 @@ final class ResultRowView: NSView {
         guard isSelected else { return }
         let rect = bounds.insetBy(dx: 8, dy: 1)
         let p = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-        Theme.rowSelected.withAlphaComponent(0.85).setFill()
+        Theme.rowSelected.setFill()
         p.fill()
         NSGraphicsContext.saveGraphicsState()
         p.addClip()
-        Theme.accent.withAlphaComponent(0.7).setFill()
+        Theme.accent.setFill()
         NSRect(x: rect.minX, y: rect.minY, width: 2, height: rect.height).fill()
-        NSColor(white: 1, alpha: 0.04).setFill()
+        NSColor(white: 1, alpha: 0.5).setFill()
         NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 1).fill()
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -332,7 +337,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     var contextProvider: () -> SearchContext
     var onActivate: (SearchResult, Bool) -> Void = { _, _ in }
     var onSettings: () -> Void = {}
-    var onAddKeyphrase: (SearchResult) -> Void = { _ in }
+    var onAddKeyphrase: (SearchResult?) -> Void = { _ in }
     var onWillShow: () -> Void = {}
 
     init(engine: SearchEngine, contextProvider: @escaping () -> SearchContext) {
@@ -347,10 +352,10 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     }
 
     private func buildViews() {
-        blur.material = .hudWindow
+        blur.material = .popover
         blur.blendingMode = .behindWindow
         blur.state = .active
-        blur.appearance = NSAppearance(named: .darkAqua)
+        blur.appearance = NSAppearance(named: .aqua)
         blur.maskImage = Self.roundedMask(radius: 11)
         blur.addSubview(background)
         panel.contentView = blur
@@ -489,6 +494,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         case .keyphrase: modeTag.text = "Keyphrase"; modeTag.style = .accent
         case .path: modeTag.text = "Path"; modeTag.style = .neutral
         case .approximate: modeTag.text = "Closest match"; modeTag.style = .neutral
+        case .scoped(let phrase): modeTag.text = "In \(phrase)"; modeTag.style = .accent
         default: modeTag.text = ""
         }
         switch mode {
@@ -642,6 +648,11 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     }
 
     private func addKeyphrase() {
+        if field.stringValue.trimmed.isEmpty {
+            hide()
+            onAddKeyphrase(nil) // nothing searched for: just open the keyphrase list
+            return
+        }
         let list = currentResults()
         guard selected < list.count else { NSSound.beep(); return }
         let r = list[selected]
@@ -680,7 +691,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             NSRect(x: k, y: 0, width: 30, height: bounds.height).fill()
         }
         NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11).addClip()
-        NSColor(white: 0.12, alpha: 0.55).setFill()   // approximates the HUD blur's darkening
+        NSColor(white: 0.97, alpha: 0.6).setFill()   // approximates the popover blur's lightening
         bounds.fill()
         rep.draw(in: bounds)
         NSGraphicsContext.restoreGraphicsState()

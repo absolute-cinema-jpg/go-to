@@ -50,7 +50,7 @@ Other URLs: `goto://show`, `goto://show?q=text`, `goto://hide`, `goto://settings
 | `documnets` | Typo-tolerant fallback when nothing matches well |
 | `~/Doc…`, `/usr/lo…` | Live path browsing |
 | `pph/sub` | Browse inside a keyphrase's folder |
-| `pph tmp` | Fuzzy search everything inside a keyphrase's folder, at any depth. Works even if the folder isn't indexed (e.g. on another volume); it's scanned on demand and kept in memory. |
+| `pph tmp` | Typing a keyphrase and a space locks it into a token (`[pph] tmp`); the rest searches everything inside its folder, at any depth. Backspace right after the token removes it in one go. With nothing typed after the token, it lists the folder's contents. Works even if the folder isn't indexed (e.g. on another volume); it's scanned on demand and kept in memory. |
 
 Items you open often are ranked higher. When the box is empty, it shows your recent items.
 

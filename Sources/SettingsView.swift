@@ -382,15 +382,29 @@ private struct KeyphraseRow: View {
     var focused: FocusState<UUID?>.Binding
     let onDelete: () -> Void
 
+    @FocusState private var editingPath: Bool
+
     private var phrase: Binding<String> {
         let id = kp.id
         return Binding(get: { store.config.keyphrases.first { $0.id == id }?.phrase ?? "" },
                        set: { value in store.updateKeyphrase(id) { $0.phrase = value } })
     }
 
+    private var path: Binding<String> {
+        let id = kp.id
+        return Binding(get: { store.config.keyphrases.first { $0.id == id }?.path ?? "" },
+                       set: { value in store.updateKeyphrase(id) { $0.path = value } })
+    }
+
+    /// Tidy a typed or pasted path: trim whitespace and any trailing "/".
+    private func normalizePath() {
+        var p = kp.path.trimmed
+        while p.count > 1 && p.hasSuffix("/") { p.removeLast() }
+        if p != kp.path { store.updateKeyphrase(kp.id) { $0.path = p } }
+    }
+
     var body: some View {
         let full = kp.path.expandingTilde
-        let exists = FileManager.default.fileExists(atPath: full)
         HStack(spacing: 10) {
             TextField("phrase", text: phrase)
                 .focused(focused, equals: kp.id)
@@ -399,21 +413,28 @@ private struct KeyphraseRow: View {
                 .frame(width: 130)
             Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold)).foregroundColor(.gtText3)
             HStack(spacing: 8) {
-                Image(nsImage: IconCache.icon(for: full)).resizable().frame(width: 16, height: 16)
-                Text(kp.path.isEmpty ? "Choose a target…" : kp.path)
+                // Exists check runs on the trimmed text so a pasted trailing space doesn't flag it.
+                let typed = kp.path.trimmed.expandingTilde
+                let found = !typed.isEmpty && FileManager.default.fileExists(atPath: typed)
+                Image(nsImage: found ? IconCache.icon(for: typed) : NSWorkspace.shared.icon(for: .folder))
+                    .resizable().frame(width: 16, height: 16)
+                    .opacity(found ? 1 : 0.4)
+                TextField("~/path/to/folder", text: path)
+                    .textFieldStyle(.plain)
                     .font(.system(size: 12))
-                    .foregroundColor(exists ? .gtText : .gtDanger)
-                    .lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 0)
-                if !exists && !kp.path.isEmpty {
+                    .foregroundColor(found || kp.path.trimmed.isEmpty ? .gtText : .gtDanger)
+                    .focused($editingPath)
+                    .onSubmit(normalizePath)
+                    .onChange(of: editingPath) { editing in if !editing { normalizePath() } }
+                if !found && !kp.path.trimmed.isEmpty {
                     Text("MISSING").font(.system(size: 8.5, weight: .bold)).tracking(1).foregroundColor(.gtDanger)
                 }
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: 4).fill(Color.gtPanel))
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) { choose() }
+            .overlay(RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(editingPath ? Color.gtAccent.opacity(0.8) : Color.clear, lineWidth: 1))
             .help(full)
             Button("Choose…", action: choose).buttonStyle(GTButtonStyle())
             GTIconButton(systemName: "xmark", danger: true, action: onDelete).help("Remove keyphrase")

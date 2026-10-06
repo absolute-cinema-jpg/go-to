@@ -79,7 +79,7 @@ Items you open often are ranked higher. When the box is empty, it shows your rec
 ## Settings
 
 The settings window has three sections:
-- **Keyphrases:** add, edit or remove them, or drop files and folders onto the list.
+- **Keyphrases:** add, edit or remove them, or drop files and folders onto the list. Type or paste a target path directly (`~` works), or pick one with **Choose…**.
 - **Index:** choose search locations and exclusions (by folder name like `node_modules`, or by path like `~/Library`). You can also include hidden files and rebuild the index.
 - **General:** menu bar icon, launch at login, and the hotkey command.
 

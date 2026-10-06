@@ -502,13 +502,10 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             anchorX = round(vf.midX - Self.width / 2)
             anchorTop = round(vf.maxY - vf.height * 0.2)
         }
-        if let query {
-            setChip(nil)
-            field.stringValue = query
-            lockKeyphraseIfTyped()
-        } else if let chip, !contextProvider().keyphrases.contains(where: { $0.id == chip.id && $0.phrase == chip.phrase }) {
-            setChip(nil) // keyphrase was edited or removed in Settings
-        }
+        // Every opening starts fresh: no token, no leftover text (or just the query from a goto://show?q= link).
+        setChip(nil)
+        field.stringValue = query ?? ""
+        lockKeyphraseIfTyped()
         apply(engine.searchSync(effectiveQuery, context: contextProvider()))
 
         panel.makeKeyAndOrderFront(nil)
@@ -519,7 +516,6 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
                                              .foregroundColor: Theme.textBright]
             editor.selectAll(nil)
         }
-        chipSelected = chip != nil
         if mouseMonitor == nil {
             mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
                 self?.hide()
@@ -534,7 +530,9 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         }
     }
 
-    func hide() {
+    /// `restoreFocus: false` when another app (Finder) is about to come forward: handing focus
+    /// back to the previous app happens asynchronously and would land on top of Finder.
+    func hide(restoreFocus: Bool = true) {
         guard panel.isVisible else { return }
         panel.orderOut(nil)
         if let m = mouseMonitor {
@@ -544,7 +542,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         if didActivateApp {
             didActivateApp = false
             let otherWindows = NSApp.windows.contains { $0 !== panel && $0.isVisible && $0.styleMask.contains(.titled) }
-            if !otherWindows { NSApp.hide(nil) }
+            if restoreFocus && !otherWindows { NSApp.hide(nil) }
         }
     }
 
@@ -800,7 +798,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             setStatus("Item no longer exists")
             return
         }
-        hide()
+        hide(restoreFocus: false)
         onActivate(r, open)
     }
 

@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     switch LaunchSafety.confirm(path: result.path, risk: risk) {
                     case .open: break
                     case .reveal: self.reveal(result.path, enterFolder: false); return
-                    case .cancel: return
+                    case .cancel: NSApp.hide(nil); return // give focus back to the previous app
                     }
                 }
                 NSWorkspace.shared.open(URL(fileURLWithPath: result.path))
@@ -130,7 +130,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func reveal(_ path: String, enterFolder: Bool) {
         if let failure = FinderRevealer.reveal(path, enterFolder: enterFolder) {
             FinderRevealer.presentError(failure, path: path)
+            return
         }
+        // The script already activates Finder; this makes sure it ends up frontmost even if
+        // another app was mid-activation, with the window we just used on top.
+        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?
+            .activate(options: [.activateIgnoringOtherApps])
     }
 
     func openSettings(tab: SettingsTab? = nil) {

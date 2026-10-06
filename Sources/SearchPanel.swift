@@ -820,7 +820,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     #if GOTO_DEVTOOLS
     // MARK: Snapshot (used by `goto-tools --snapshot` for design review)
 
-    func renderSnapshot(query: String, to url: URL) {
+    func renderSnapshot(query: String, to url: URL, padding pad: CGFloat = 0) {
         anchorX = 0
         anchorTop = 2000
         setChip(nil)
@@ -836,23 +836,36 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
                                          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
         rep.size = view.bounds.size
         view.cacheDisplay(in: view.bounds, to: rep)
-        guard let out = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: rep.pixelsWide, pixelsHigh: rep.pixelsHigh,
+        let canvas = NSRect(x: 0, y: 0, width: view.bounds.width + pad * 2, height: view.bounds.height + pad * 2)
+        guard let out = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(canvas.width * scale), pixelsHigh: Int(canvas.height * scale),
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return }
-        out.size = view.bounds.size
+        out.size = canvas.size
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: out)
-        let bounds = NSRect(origin: .zero, size: view.bounds.size)
         // Stand-in for the desktop (the real blur can't be captured offscreen).
-        NSGradient(colors: [Theme.rgb(0x2B5876), Theme.rgb(0x4E4376), Theme.rgb(0xC06C84)])?.draw(in: bounds, angle: -30)
-        for k in stride(from: 0, to: bounds.width, by: 90) {
+        NSGradient(colors: [Theme.rgb(0x2B5876), Theme.rgb(0x4E4376), Theme.rgb(0xC06C84)])?.draw(in: canvas, angle: -30)
+        for k in stride(from: 0, to: canvas.width, by: 90) {
             NSColor(white: 1, alpha: 0.18).setFill()
-            NSRect(x: k, y: 0, width: 30, height: bounds.height).fill()
+            NSRect(x: k, y: 0, width: 30, height: canvas.height).fill()
         }
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11).addClip()
+        let panelRect = NSRect(x: pad, y: pad, width: view.bounds.width, height: view.bounds.height)
+        let shape = NSBezierPath(roundedRect: panelRect.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)
+        if pad > 0 {
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.4)
+            shadow.shadowBlurRadius = 28
+            shadow.shadowOffset = NSSize(width: 0, height: -10)
+            shadow.set()
+            NSColor(white: 0.97, alpha: 1).setFill()
+            shape.fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        shape.addClip()
         NSColor(white: 0.97, alpha: 0.6).setFill()   // approximates the popover blur's lightening
-        bounds.fill()
-        rep.draw(in: bounds)
+        panelRect.fill()
+        rep.draw(in: panelRect)
         NSGraphicsContext.restoreGraphicsState()
         try? out.representation(using: .png, properties: [:])?.write(to: url)
     }

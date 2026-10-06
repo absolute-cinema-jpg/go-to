@@ -2,12 +2,22 @@
 
 A Spotlight-style popup that finds a file or folder and reveals it in Finder. It reuses your most recent Finder window, or opens a new one if none are open.
 
+<p align="center">
+  <img src="docs/screenshot-search.png" width="680" alt="Go To search panel showing fuzzy matches for “rough cut” across several folders">
+</p>
+
+Type a keyphrase and a space to lock it in as a token, then search inside its folder:
+
+<p align="center">
+  <img src="docs/screenshot-keyphrase.png" width="680" alt="Go To with the keyphrase “nl” locked in as a token, searching for “reel” inside it">
+</p>
+
 ## Download
 
-Grab `GoTo-<version>.zip` from the [latest release](https://github.com/absolute-cinema-jpg/go-to/releases/latest). It needs macOS 13 or later and runs on Apple silicon and Intel Macs. Unzip it and move `GoTo.app` to `/Applications`.
+Grab `GoTo-<version>.zip` from the [latest release](https://github.com/absolute-cinema-jpg/go-to/releases/latest). It needs macOS 12 Monterey or later and runs on Apple silicon and Intel Macs. Unzip it and move `GoTo.app` to `/Applications`.
 
 The app isn't notarized by Apple (that needs a paid developer account), so the first launch is blocked with "Apple cannot check it for malicious software". To allow it:
-- **macOS 13–14:** right-click `GoTo.app` → **Open** → **Open**.
+- **macOS 12–14:** right-click `GoTo.app` → **Open** → **Open**.
 - **macOS 15 and later:** try to open it once, then go to **System Settings › Privacy & Security** and click **Open Anyway**.
 
 You only need to do this once. You can check the download against the SHA-256 checksum in the release notes, or build it yourself from source (below).
@@ -117,7 +127,7 @@ This prints index time, ranked results and per-keystroke latency.
 build/goto-tools --snapshot panel.png "query"
 ```
 
-This renders the panel to an image.
+This renders the panel to an image. The README screenshots come from a folder of made-up demo files, using `--no-user-config` (ignore your own keyphrases), `--display-home DEMO` (show the demo folder as `~`) and `--padded`, so no real file names appear.
 
 ## License
 

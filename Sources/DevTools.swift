@@ -3,7 +3,7 @@ import AppKit
 import CryptoKit
 
 /// `goto-tools --search [--root DIR]... [--kp PHRASE=PATH]... QUERY...`  index + query benchmark
-/// `goto-tools --snapshot OUT.png [--root DIR]... [QUERY]`  render the panel to an image
+/// `goto-tools --snapshot OUT.png [--root DIR]... [--display-home DIR] [--padded] [--no-user-config] [QUERY]`  render the panel to an image
 /// `goto-tools --make-iconset DIR`  render the app icon
 /// `goto-tools --selftest`  check the security hardening (exit status 1 on failure)
 enum DevTools {
@@ -21,11 +21,17 @@ enum DevTools {
         var queries: [String] = []
         var snapshot: String?
         var keyphrases: [Keyphrase] = []
+        var padded = false
+        var userConfig = true
         var i = 1
         while i < args.count {
             switch args[i] {
             case "--root" where i + 1 < args.count: roots.append(args[i + 1]); i += 2; continue
             case "--snapshot" where i + 1 < args.count: snapshot = args[i + 1]; i += 2; continue
+            case "--display-home" where i + 1 < args.count:
+                DisplayHome.path = (args[i + 1] as NSString).standardizingPath; i += 2; continue
+            case "--padded": padded = true; i += 1; continue
+            case "--no-user-config": userConfig = false; i += 1; continue
             case "--kp" where i + 1 < args.count:
                 let parts = args[i + 1].split(separator: "=", maxSplits: 1).map(String.init)
                 if parts.count == 2 { keyphrases.append(Keyphrase(phrase: parts[0], path: parts[1])) }
@@ -34,7 +40,8 @@ enum DevTools {
             default: queries.append(args[i]); i += 1
             }
         }
-        var config = ConfigStore.load().0
+        // --no-user-config: defaults only, so demos never pick up your own keyphrases or paths.
+        var config = userConfig ? ConfigStore.load().0 : AppConfig()
         if !roots.isEmpty { config.searchRoots = roots }
         config.keyphrases += keyphrases
 
@@ -60,7 +67,7 @@ enum DevTools {
             NSApp.setActivationPolicy(.prohibited)
             let panel = SearchPanelController(engine: engine) { ctx }
             panel.setStatus("\(Fmt.count(index.count)) items")
-            panel.renderSnapshot(query: queries.first ?? "", to: URL(fileURLWithPath: snapshot))
+            panel.renderSnapshot(query: queries.first ?? "", to: URL(fileURLWithPath: snapshot), padding: padded ? 44 : 0)
             print("Wrote \(snapshot)")
             return
         }

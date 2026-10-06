@@ -21,7 +21,7 @@ ARCHS=("$NATIVE")
 # -file-prefix-map keeps this machine's paths (home folder, user name) out of the binaries.
 swift_build() { # arch, output, extra flags...
   local arch=$1 out=$2; shift 2
-  swiftc -O -whole-module-optimization -target "$arch-apple-macos13.0" -sdk "$(xcrun --show-sdk-path)" \
+  swiftc -O -whole-module-optimization -target "$arch-apple-macos12.0" -sdk "$(xcrun --show-sdk-path)" \
     -module-name GoTo -import-objc-header Sources/Bridging.h -file-prefix-map "$PWD=." \
     "$@" Sources/*.swift -o "$out"
 }
@@ -37,8 +37,14 @@ for arch in "${ARCHS[@]}"; do
 done
 lipo -create "${SLICES[@]}" -output "$APP/Contents/MacOS/GoTo"
 
-echo "› Compiling developer tools…"
-swift_build "$NATIVE" "$TOOLS" -D GOTO_DEVTOOLS
+# Release builds make the tools universal too, so the Intel slice can be tested under Rosetta.
+TOOL_SLICES=()
+for arch in "${ARCHS[@]}"; do
+  echo "› Compiling developer tools ($arch)…"
+  swift_build "$arch" "build/obj/goto-tools-$arch" -D GOTO_DEVTOOLS
+  TOOL_SLICES+=("build/obj/goto-tools-$arch")
+done
+lipo -create "${TOOL_SLICES[@]}" -output "$TOOLS"
 codesign --force --sign - --options runtime "$TOOLS"
 
 cp Info.plist "$APP/Contents/Info.plist"

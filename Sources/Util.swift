@@ -8,7 +8,7 @@ extension String {
     }
 
     var abbreviatingHome: String {
-        let home = NSHomeDirectory()
+        let home = DisplayHome.path
         if self == home { return "~" }
         if hasPrefix(home + "/") { return "~" + dropFirst(home.count) }
         return self
@@ -16,6 +16,11 @@ extension String {
 
     var nfc: String { precomposedStringWithCanonicalMapping }
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+/// The folder shown as "~". Only the developer tools change it (for README screenshots of demo data).
+enum DisplayHome {
+    static var path = NSHomeDirectory()
 }
 
 @inline(__always) func asciiLowerByte(_ b: UInt8) -> UInt8 { (b &- 65) < 26 ? b | 0x20 : b }

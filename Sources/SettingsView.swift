@@ -139,7 +139,7 @@ struct GTButtonStyle: ButtonStyle {
             let pressed = configuration.isPressed
             configuration.label
                 .font(.system(size: 10, weight: .bold))
-                .tracking(0.9)
+                .gtTracking(0.9)
                 .textCase(.uppercase)
                 .foregroundColor(prominent ? Color.white : (hover ? .gtText : Color.gtText2))
                 .padding(.horizontal, 12)
@@ -299,7 +299,7 @@ private struct KeyphrasesPane: View {
                         Text("TARGET")
                         Spacer()
                     }
-                    .font(.system(size: 8.5, weight: .bold)).tracking(1.2).foregroundColor(.gtText3)
+                    .font(.system(size: 8.5, weight: .bold)).gtTracking(1.2).foregroundColor(.gtText3)
                     .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 6)
 
                     if store.config.keyphrases.isEmpty {
@@ -548,7 +548,7 @@ private struct IndexPane: View {
 
 private struct GeneralPane: View {
     @ObservedObject var store: ConfigStore
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
     @State private var copied = false
     static let command = "open -g goto://toggle"
@@ -594,15 +594,23 @@ private struct GeneralPane: View {
                         }
                         .toggleStyle(GTToggleStyle())
                         Rectangle().fill(Color.gtEtchDark).frame(height: 1)
-                        Toggle(isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin)) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Launch at login").font(.system(size: 12.5)).foregroundColor(.gtText)
-                                if let loginError {
-                                    Text(loginError).font(.system(size: 11)).foregroundColor(.gtDanger)
+                        if LoginItem.isSupported {
+                            Toggle(isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin)) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Launch at login").font(.system(size: 12.5)).foregroundColor(.gtText)
+                                    if let loginError {
+                                        Text(loginError).font(.system(size: 11)).foregroundColor(.gtDanger)
+                                    }
                                 }
                             }
+                            .toggleStyle(GTToggleStyle())
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Launch at login").font(.system(size: 12.5)).foregroundColor(.gtText)
+                                Text("On macOS 12, add Go To under System Preferences › Users & Groups › Login Items.")
+                                    .font(.system(size: 11)).foregroundColor(.gtText3)
+                            }
                         }
-                        .toggleStyle(GTToggleStyle())
                     }
                     .padding(14)
                 }
@@ -652,11 +660,36 @@ private struct GeneralPane: View {
 
     private func setLaunchAtLogin(_ on: Bool) {
         do {
-            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            try LoginItem.set(on)
             loginError = nil
         } catch {
             loginError = error.localizedDescription
         }
-        launchAtLogin = SMAppService.mainApp.status == .enabled
+        launchAtLogin = LoginItem.isEnabled
+    }
+}
+
+/// Launch at login via SMAppService, which needs macOS 13; on 12 the setting is hidden.
+private enum LoginItem {
+    static var isSupported: Bool {
+        if #available(macOS 13, *) { return true }
+        return false
+    }
+
+    static var isEnabled: Bool {
+        if #available(macOS 13, *) { return SMAppService.mainApp.status == .enabled }
+        return false
+    }
+
+    static func set(_ on: Bool) throws {
+        guard #available(macOS 13, *) else { return }
+        if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+    }
+}
+
+extension View {
+    /// Letter-spacing on any view needs macOS 13; on 12 the text is simply set without it.
+    @ViewBuilder func gtTracking(_ value: CGFloat) -> some View {
+        if #available(macOS 13, *) { tracking(value) } else { self }
     }
 }

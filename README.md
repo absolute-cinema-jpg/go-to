@@ -2,6 +2,16 @@
 
 A Spotlight-style popup that finds a file or folder and reveals it in Finder. It reuses your most recent Finder window, or opens a new one if none are open.
 
+## Download
+
+Grab `GoTo-<version>.zip` from the [latest release](https://github.com/absolute-cinema-jpg/go-to/releases/latest). It needs macOS 13 or later and runs on Apple silicon and Intel Macs. Unzip it and move `GoTo.app` to `/Applications`.
+
+The app isn't notarized by Apple (that needs a paid developer account), so the first launch is blocked with "Apple cannot check it for malicious software". To allow it:
+- **macOS 13–14:** right-click `GoTo.app` → **Open** → **Open**.
+- **macOS 15 and later:** try to open it once, then go to **System Settings › Privacy & Security** and click **Open Anyway**.
+
+You only need to do this once. You can check the download against the SHA-256 checksum in the release notes, or build it yourself from source (below).
+
 ## Build & install
 
 ```bash
@@ -87,7 +97,9 @@ The index is built in the background with `fts`, cached to disk, and rescanned a
 ./build.sh
 ```
 
-This also builds `build/goto-tools`, which is never installed:
+This also builds `build/goto-tools`, which is never installed. `./build.sh --release` makes a universal (Apple silicon + Intel) build and zips it to `build/GoTo-<version>.zip` for a GitHub release.
+
+The developer tools include:
 
 ```bash
 build/goto-tools --selftest

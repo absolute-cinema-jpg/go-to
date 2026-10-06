@@ -1,5 +1,8 @@
 #!/bin/bash
-# Build GoTo.app into ./build. Pass --install to copy it to /Applications and (re)launch it.
+# Build GoTo.app into ./build.
+#   ./build.sh             build for this Mac
+#   ./build.sh --install   build, copy to /Applications and (re)launch
+#   ./build.sh --release   universal (Apple silicon + Intel) build, zipped for distribution
 #
 # Two binaries are produced:
 #   build/GoTo.app         the app; no developer entry points, signed with the hardened runtime
@@ -7,20 +10,35 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+MODE="${1:-}"
 APP=build/GoTo.app
 TOOLS=build/goto-tools
-ARCH=$(uname -m)
-SWIFTC=(swiftc -O -whole-module-optimization -target "$ARCH-apple-macos13.0" -sdk "$(xcrun --show-sdk-path)"
-        -module-name GoTo -import-objc-header Sources/Bridging.h)
+NATIVE=$(uname -m)
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
+ARCHS=("$NATIVE")
+[[ "$MODE" == "--release" ]] && ARCHS=(arm64 x86_64)
 
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+# -file-prefix-map keeps this machine's paths (home folder, user name) out of the binaries.
+swift_build() { # arch, output, extra flags...
+  local arch=$1 out=$2; shift 2
+  swiftc -O -whole-module-optimization -target "$arch-apple-macos13.0" -sdk "$(xcrun --show-sdk-path)" \
+    -module-name GoTo -import-objc-header Sources/Bridging.h -file-prefix-map "$PWD=." \
+    "$@" Sources/*.swift -o "$out"
+}
 
-echo "› Compiling app ($ARCH)…"
-"${SWIFTC[@]}" Sources/*.swift -o "$APP/Contents/MacOS/GoTo"
+rm -rf "$APP" build/obj
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/obj
+
+SLICES=()
+for arch in "${ARCHS[@]}"; do
+  echo "› Compiling app ($arch)…"
+  swift_build "$arch" "build/obj/GoTo-$arch"
+  SLICES+=("build/obj/GoTo-$arch")
+done
+lipo -create "${SLICES[@]}" -output "$APP/Contents/MacOS/GoTo"
 
 echo "› Compiling developer tools…"
-"${SWIFTC[@]}" -D GOTO_DEVTOOLS Sources/*.swift -o "$TOOLS"
+swift_build "$NATIVE" "$TOOLS" -D GOTO_DEVTOOLS
 codesign --force --sign - --options runtime "$TOOLS"
 
 cp Info.plist "$APP/Contents/Info.plist"
@@ -36,13 +54,23 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - --options runtime --entitlements GoTo.entitlements \
   --identifier local.goto.GoTo "$APP"
 codesign --verify --strict "$APP"
-echo "✓ Built $APP"
+echo "✓ Built $APP ($(lipo -archs "$APP/Contents/MacOS/GoTo"))"
 
-if [[ "${1:-}" == "--install" ]]; then
-  pkill -x GoTo 2>/dev/null && sleep 0.5 || true
-  rm -rf /Applications/GoTo.app
-  cp -R "$APP" /Applications/
-  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/GoTo.app
-  open /Applications/GoTo.app
-  echo "✓ Installed to /Applications/GoTo.app and launched"
-fi
+case "$MODE" in
+  --install)
+    pkill -x GoTo 2>/dev/null && sleep 0.5 || true
+    rm -rf /Applications/GoTo.app
+    cp -R "$APP" /Applications/
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/GoTo.app
+    open /Applications/GoTo.app
+    echo "✓ Installed to /Applications/GoTo.app and launched"
+    ;;
+  --release)
+    ZIP="build/GoTo-$VERSION.zip"
+    rm -f "$ZIP"
+    # No extended attributes or quarantine flags from this machine in the archive.
+    ditto -c -k --keepParent --noextattr --noqtn --norsrc "$APP" "$ZIP"
+    echo "✓ Release archive: $ZIP"
+    shasum -a 256 "$ZIP"
+    ;;
+esac

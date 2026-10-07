@@ -28,27 +28,27 @@ enum AppIcon {
 
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
         shadow.shadowBlurRadius = 24 * s
         shadow.shadowOffset = NSSize(width: 0, height: -10 * s)
         shadow.set()
-        Theme.rgb(0x1A1A1D).setFill()
+        Theme.rgb(0xF8F5F1).setFill()
         tilePath.fill()
         NSGraphicsContext.restoreGraphicsState()
 
         NSGraphicsContext.saveGraphicsState()
         tilePath.addClip()
-        NSGradient(starting: Theme.rgb(0x3A3A40), ending: Theme.rgb(0x16161A))?.draw(in: tile, angle: -90)
+        NSGradient(starting: Theme.rgb(0xFFFFFF), ending: Theme.rgb(0xF8F5F1))?.draw(in: tile, angle: -90)
         // Header strip echoing the panel.
-        Theme.rgb(0x000000, 0.22).setFill()
+        Theme.rgb(0x4059AD, 0.08).setFill()
         NSRect(x: tile.minX, y: tile.maxY - 150 * s, width: tile.width, height: 150 * s).fill()
-        Theme.rgb(0xFFFFFF, 0.06).setFill()
+        Theme.rgb(0x4059AD, 0.18).setFill()
         NSRect(x: tile.minX, y: tile.maxY - 152 * s, width: tile.width, height: 2 * s).fill()
         Theme.accent.setFill()
         NSBezierPath(roundedRect: NSRect(x: tile.minX + 70 * s, y: tile.maxY - 92 * s, width: 34 * s, height: 34 * s),
                      xRadius: 7 * s, yRadius: 7 * s).fill()
         for k in 0..<3 {
-            Theme.rgb(0xFFFFFF, 0.16).setFill()
+            Theme.rgb(0x6B9AC4, 0.35).setFill()
             NSBezierPath(roundedRect: NSRect(x: tile.minX + (140 + CGFloat(k) * 70) * s, y: tile.maxY - 84 * s,
                                              width: 50 * s, height: 18 * s), xRadius: 9 * s, yRadius: 9 * s).fill()
         }
@@ -66,10 +66,10 @@ enum AppIcon {
         folder.close()
         folder.lineJoinStyle = .round
         folder.lineWidth = 30 * s
-        Theme.rgb(0xD9D9DE).setStroke()
+        Theme.rgb(0x1C2826).setStroke()
         folder.stroke()
 
-        // Orange lens with handle.
+        // Sapphire lens with handle.
         let c = NSPoint(x: 640 * s, y: 330 * s)
         let r = 120 * s
         let handle = NSBezierPath()
@@ -80,7 +80,7 @@ enum AppIcon {
         Theme.accent.setStroke()
         handle.stroke()
         let lens = NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
-        Theme.rgb(0x1E1E22).setFill()
+        Theme.rgb(0xF8F5F1).setFill()
         lens.fill()
         lens.lineWidth = 40 * s
         lens.stroke()

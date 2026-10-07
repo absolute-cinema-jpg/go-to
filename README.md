@@ -37,28 +37,15 @@ On first launch macOS asks for:
 
 The app is ad-hoc signed (no developer certificate), so after a rebuild macOS may ask for these again. For the keychain prompt, choose **Always Allow**.
 
-## Hotkey (Karabiner-Elements)
+## Opening Go To
 
-Bind your key to the shell command:
+Run this shell command from a keyboard shortcut to open Go To:
 
-```
+```bash
 open -g goto://toggle
 ```
 
-Example complex modification (Right ⌘ + Space):
-
-```json
-{
-  "description": "Go To",
-  "manipulators": [{
-    "type": "basic",
-    "from": { "key_code": "spacebar", "modifiers": { "mandatory": ["right_command"] } },
-    "to": [{ "shell_command": "open -g goto://toggle" }]
-  }]
-}
-```
-
-Other URLs: `goto://show`, `goto://show?q=text`, `goto://hide`, `goto://settings`, `goto://reindex`.
+macOS Shortcuts, Keyboard Maestro, Raycast, BetterTouchTool and similar apps can all run it from a hotkey. You can also click the menu bar icon or open `GoTo.app` from Spotlight. Swap `toggle` for `show`, `show?q=text`, `hide`, `settings` or `reindex` to do something else.
 
 ## Searching
 
@@ -72,14 +59,17 @@ Other URLs: `goto://show`, `goto://show?q=text`, `goto://hide`, `goto://settings
 | `pph/sub` | Browse inside a keyphrase's folder |
 | `pph tmp` | Typing a keyphrase and a space locks it into a token (`[pph] tmp`); the rest searches everything inside its folder, at any depth. Backspace right after the token removes it in one go. With nothing typed after the token, it lists the folder's contents. Works even if the folder isn't indexed (e.g. on another volume); it's scanned on demand and kept in memory. |
 
+| `deploy` (a command keyword) | ↵ runs its shell command. `deploy` + space locks it in (`[$ deploy] staging`); the rest is passed as arguments. |
+
 Items you open often are ranked higher. When the box is empty, it shows your recent items.
 
 **Keys:** ↵ reveal · ⌘↵ open (enter the folder, or open the file) · ⇥ complete the path · ↑↓ / ⌃N ⌃P move · ⌘1–8 reveal that result · ⌘K add a keyphrase for the selected result · ⌘C copy the path · ⌘, settings · esc close
 
 ## Settings
 
-The settings window has three sections:
+The settings window has four sections:
 - **Keyphrases:** add, edit or remove them, or drop files and folders onto the list. Type or paste a target path directly (`~` works), or pick one with **Choose…**.
+- **Commands:** keywords that run shell commands. Type a keyword and a command into the top row and press ↵ to add one. Each runs in the background (a notice appears only if it fails; click it to copy the output) or in a Terminal window. Commands can span several lines (⇧↵ for a new line). While a background command runs, a stop button appears in the menu bar; clicking it ends the command and everything it started. Arguments typed after the keyword arrive as `$1`, `$2`… (`"$@"`), with the whole text in `$GOTO_QUERY`. Commands run in zsh as you, from your home folder.
 - **Index:** choose search locations and exclusions (by folder name like `node_modules`, or by path like `~/Library`). You can also include hidden files and rebuild the index.
 - **General:** menu bar icon, launch at login, and the hotkey command.
 
@@ -97,6 +87,8 @@ The index is built in the background with `fts`, cached to disk, and rescanned a
 | AppleScript injection through crafted file names | Paths are passed to a precompiled handler as Apple event parameters and never spliced into script text. |
 | A malicious file ranking first and being run with ⌘↵ | Apps, scripts, installers and executables need confirmation, except apps in `/Applications` or `/System` that aren't quarantined. |
 | Any app or web page can send `goto://` URLs | URLs can only show or hide UI, pre-fill a query (control characters stripped, 200-character cap) or request a reindex (at most once a minute). Unknown actions are ignored. |
+| Text typed after a command keyword turning into extra shell commands | Arguments are never spliced into the command line: they're passed as separate argv entries (or single-quoted into `set --` for Terminal), so `$(…)`, `;` and backticks stay literal. |
+| A link running a command | `goto://` links can't lock in a command or supply arguments, and running a command whose keyword came from a link asks for confirmation. |
 | A corrupted or forged index cache | Every entry is bounds- and structure-checked on load. Anything malformed is discarded and rebuilt. |
 
 `config.json` stays plain text so you can edit it, but it is owner-only.
@@ -115,7 +107,7 @@ The developer tools include:
 build/goto-tools --selftest
 ```
 
-This checks the security hardening above: encryption, cache validation (including 5,000 random corruptions), hostile file names, launch confirmation and URL sanitising.
+This checks the security hardening above: encryption, cache validation (including 5,000 random corruptions), hostile file names, command argument handling, launch confirmation and URL sanitising.
 
 ```bash
 build/goto-tools --search --root ~/Documents --kp pph=~/Documents "query" "another"

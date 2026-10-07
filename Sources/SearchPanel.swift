@@ -79,14 +79,15 @@ private final class PanelBackgroundView: NSView {
 }
 
 final class TagView: NSView {
-    enum Style { case accent, neutral }
+    enum Style { case accent, neutral, terminal }
     var text = "" { didSet { needsDisplay = true } }
     var style: Style = .neutral { didSet { needsDisplay = true } }
     var monospaced = false
     override var isFlipped: Bool { true }
 
     private var attributed: NSAttributedString {
-        let color = style == .accent ? Theme.accent.withAlphaComponent(0.85) : Theme.textSecondary
+        let color = style == .accent ? Theme.accent.withAlphaComponent(0.85)
+            : (style == .terminal ? Theme.Term.prompt : Theme.textSecondary)
         if monospaced {
             return NSAttributedString(string: text, attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .semibold), .foregroundColor: color,
@@ -105,6 +106,10 @@ final class TagView: NSView {
             Theme.accent.withAlphaComponent(0.06).setFill()
             p.fill()
             Theme.accent.withAlphaComponent(0.3).setStroke()
+        } else if style == .terminal {
+            Theme.Term.field.setFill()
+            p.fill()
+            Theme.Term.prompt.withAlphaComponent(0.35).setStroke()
         } else {
             Theme.keycapBG.setFill()
             p.fill()
@@ -121,12 +126,23 @@ final class TagView: NSView {
 /// A keyphrase "locked in" as a solid token at the start of the search field ("scr ␣" → [scr]).
 final class KeyphraseChipView: NSView {
     var text = "" { didSet { needsDisplay = true } }
+    /// Command tokens read as a shell prompt: "$ deploy" in monospace.
+    var isCommand = false { didSet { needsDisplay = true } }
     var isSelected = false { didSet { needsDisplay = true } }
     var onClick: (() -> Void)?
     override var isFlipped: Bool { true }
 
     private var attributed: NSAttributedString {
-        NSAttributedString(string: text, attributes: [
+        if isCommand {
+            let s = NSMutableAttributedString(string: "$ ", attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 15, weight: .bold), .foregroundColor: Theme.Term.prompt,
+            ])
+            s.append(NSAttributedString(string: text, attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 15, weight: .semibold), .foregroundColor: Theme.Term.text,
+            ]))
+            return s
+        }
+        return NSAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: 16, weight: .semibold),
             .foregroundColor: isSelected ? Theme.panelBG : Theme.accent,
         ])
@@ -138,9 +154,15 @@ final class KeyphraseChipView: NSView {
         guard !text.isEmpty else { return }
         let rect = bounds.insetBy(dx: 0.75, dy: 0.75)
         let p = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-        (isSelected ? Theme.accent : Theme.accent.withAlphaComponent(0.12)).setFill()
-        p.fill()
-        Theme.accent.withAlphaComponent(isSelected ? 1 : 0.65).setStroke()
+        if isCommand {
+            (isSelected ? Theme.Term.rowSelected : Theme.Term.bg).setFill()
+            p.fill()
+            Theme.Term.prompt.withAlphaComponent(isSelected ? 1 : 0.55).setStroke()
+        } else {
+            (isSelected ? Theme.accent : Theme.accent.withAlphaComponent(0.12)).setFill()
+            p.fill()
+            Theme.accent.withAlphaComponent(isSelected ? 1 : 0.65).setStroke()
+        }
         p.lineWidth = 1.5
         p.stroke()
         let a = attributed
@@ -152,7 +174,9 @@ final class KeyphraseChipView: NSView {
 }
 
 private final class FooterView: NSView {
-    var hints: [(String, String)] = [("↵", "Reveal"), ("⌘↵", "Open"), ("⇥", "Complete"), ("⌘K", "Keyphrase"), ("⌘,", "Settings")]
+    static let fileHints: [(String, String)] = [("↵", "Reveal"), ("⌘↵", "Open"), ("⇥", "Complete"), ("⌘K", "Keyphrase"), ("⌘,", "Settings")]
+    static let commandHints: [(String, String)] = [("↵", "Run"), ("⇥", "Add arguments"), ("⌘C", "Copy command"), ("⌘,", "Settings")]
+    var hints = FooterView.fileHints { didSet { needsDisplay = true } }
     var rightText = "" { didSet { needsDisplay = true } }
     override var isFlipped: Bool { true }
 
@@ -242,6 +266,19 @@ final class ResultRowView: NSView {
 
     func configure(_ r: SearchResult, number: Int) {
         result = r
+        shortcut.attributedStringValue = NSAttributedString(string: number <= 9 ? "⌘\(number)" : "", attributes: [
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: Theme.textTertiary,
+        ])
+        if let cmd = r.command {
+            icon.image = IconCache.icon(for: "/System/Applications/Utilities/Terminal.app")
+            subtitle.stringValue = "$ " + cmd.command.replacingOccurrences(of: "\n", with: " ⏎ ")
+            kindTag.text = cmd.runInTerminal ? "Terminal" : "Command"
+            kindTag.style = .terminal
+            kindTag.monospaced = false
+            render()
+            needsLayout = true
+            return
+        }
         icon.image = IconCache.icon(for: r.path)
         let parent = (r.path as NSString).deletingLastPathComponent
         let standardParent = (parent as NSString).standardizingPath
@@ -275,21 +312,29 @@ final class ResultRowView: NSView {
         needsLayout = true
     }
 
+    private var isCommand: Bool { result?.command != nil }
+
     private func render() {
         guard let r = result else { return }
+        let dark = isCommand
         let base: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13.5, weight: .medium),
-            .foregroundColor: isSelected ? Theme.textBright : Theme.textPrimary,
+            .font: dark ? NSFont.monospacedSystemFont(ofSize: 13, weight: .medium) : NSFont.systemFont(ofSize: 13.5, weight: .medium),
+            .foregroundColor: dark ? Theme.Term.text : (isSelected ? Theme.textBright : Theme.textPrimary),
         ]
         let s = NSMutableAttributedString(string: r.name, attributes: base)
         for range in nsRanges(r.highlight, in: r.name) {
-            s.addAttributes([.foregroundColor: Theme.accent, .font: NSFont.systemFont(ofSize: 13.5, weight: .semibold)], range: range)
+            s.addAttributes([.foregroundColor: dark ? Theme.Term.prompt : Theme.accent,
+                             .font: dark ? NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+                                         : NSFont.systemFont(ofSize: 13.5, weight: .semibold)], range: range)
         }
         let para = NSMutableParagraphStyle()
         para.lineBreakMode = .byTruncatingTail
         s.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: s.length))
         title.attributedStringValue = s
-        subtitle.textColor = isSelected ? Theme.textSecondary.blended(withFraction: 0.25, of: .black) : Theme.textSecondary
+        subtitle.textColor = dark ? Theme.Term.text2
+            : (isSelected ? Theme.textSecondary.blended(withFraction: 0.25, of: .black) : Theme.textSecondary)
+        subtitle.font = dark ? .monospacedSystemFont(ofSize: 10.5, weight: .regular) : .systemFont(ofSize: 11)
+        shortcut.textColor = dark ? Theme.Term.text3 : Theme.textTertiary
         needsDisplay = true
     }
 
@@ -307,6 +352,21 @@ final class ResultRowView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        if isCommand {
+            // Commands get a dark, terminal-like row against the light panel.
+            let rect = bounds.insetBy(dx: 8, dy: 2)
+            let p = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
+            (isSelected ? Theme.Term.rowSelected : Theme.Term.row).setFill()
+            p.fill()
+            if isSelected {
+                NSGraphicsContext.saveGraphicsState()
+                p.addClip()
+                Theme.Term.prompt.setFill()
+                NSRect(x: rect.minX, y: rect.minY, width: 2, height: rect.height).fill()
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            return
+        }
         guard isSelected else { return }
         let rect = bounds.insetBy(dx: 8, dy: 1)
         let p = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
@@ -370,6 +430,11 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
 
     /// The keyphrase locked into the search field as a token; the text after it searches inside its folder.
     private var chip: Keyphrase?
+    /// A command keyword locked into the field; the text after it becomes the command's arguments.
+    private var commandChip: ShellCommand?
+    /// The current text came from a goto:// link rather than typing, so commands need confirming.
+    private var queryFromURL = false
+    var onRunCommand: (ShellCommand, String) -> Void = { _, _ in }
     /// Whole query (token + text) selected, e.g. on reopening: typing or deleting replaces both.
     private var chipSelected = false { didSet { chipView.isSelected = chipSelected } }
 
@@ -437,6 +502,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     /// [scr] alone → "scr/" (the folder itself, then its contents).
     private var effectiveQuery: String {
         let text = field.stringValue
+        if let cmd = commandChip { return "\u{1}command:\(cmd.id.uuidString) \(text)" } // never sent to the engine
         guard let chip else { return text }
         let phrase = chip.phrase.trimmed
         if text.trimmed.isEmpty { return phrase + "/" }
@@ -445,8 +511,10 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
 
     private func setChip(_ kp: Keyphrase?) {
         chip = kp
+        commandChip = nil
         chipSelected = false
         chipView.text = kp?.phrase.trimmed ?? ""
+        chipView.isCommand = false
         chipView.isHidden = kp == nil
         let folder = chipDir.map { ($0 as NSString).lastPathComponent }
         field.placeholderAttributedString = NSAttributedString(
@@ -454,13 +522,34 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             attributes: [.font: NSFont.systemFont(ofSize: 21, weight: .light), .foregroundColor: Theme.textTertiary])
     }
 
-    /// "scr␣" becomes a [scr] token when scr is a keyphrase for a folder.
+    private func setCommandChip(_ cmd: ShellCommand) {
+        setChip(nil)
+        commandChip = cmd
+        chipView.text = cmd.phrase.trimmed
+        chipView.isCommand = true
+        chipView.isHidden = false
+        field.placeholderAttributedString = NSAttributedString(
+            string: "Arguments (optional) — ↵ to run",
+            attributes: [.font: NSFont.systemFont(ofSize: 21, weight: .light), .foregroundColor: Theme.textTertiary])
+    }
+
+    /// "scr␣" becomes a [scr] token when scr is a keyphrase for a folder, or a [$ scr] token for a command.
     private func lockKeyphraseIfTyped() {
-        guard chip == nil else { return }
+        guard chip == nil, commandChip == nil else { return }
         let text = field.stringValue
         guard let space = text.firstIndex(of: " "), space != text.startIndex else { return }
         let head = text[..<space].lowercased()
-        guard let kp = contextProvider().keyphrases.first(where: { $0.normalizedPhrase == head }) else { return }
+        let ctx = contextProvider()
+        // Links can pre-fill text but never lock in a command (arguments must be typed by you).
+        if !queryFromURL, !ctx.keyphrases.contains(where: { $0.normalizedPhrase == head }),
+           let cmd = ctx.commands.first(where: { $0.normalizedPhrase == head && !$0.command.trimmed.isEmpty }) {
+            setCommandChip(cmd)
+            let rest = String(text[text.index(after: space)...])
+            field.stringValue = rest
+            field.currentEditor()?.selectedRange = NSRange(location: (rest as NSString).length, length: 0)
+            return
+        }
+        guard let kp = ctx.keyphrases.first(where: { $0.normalizedPhrase == head }) else { return }
         var isDir: ObjCBool = false
         let dir = (kp.path.expandingTilde as NSString).standardizingPath
         guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { return }
@@ -504,9 +593,10 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         }
         // Every opening starts fresh: no token, no leftover text (or just the query from a goto://show?q= link).
         setChip(nil)
+        queryFromURL = query != nil
         field.stringValue = query ?? ""
         lockKeyphraseIfTyped()
-        apply(engine.searchSync(effectiveQuery, context: contextProvider()))
+        apply(searchNow())
 
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(field)
@@ -539,7 +629,9 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             NSEvent.removeMonitor(m)
             mouseMonitor = nil
         }
-        if didActivateApp {
+        // Hand focus back if Go To ended up active: either we activated ourselves to take keystrokes,
+        // or a launcher opened goto://toggle without -g (Shortcuts, Keyboard Maestro's Open URL…).
+        if didActivateApp || NSApp.isActive {
             didActivateApp = false
             let otherWindows = NSApp.windows.contains { $0 !== panel && $0.isVisible && $0.styleMask.contains(.titled) }
             if restoreFocus && !otherWindows { NSApp.hide(nil) }
@@ -564,11 +656,24 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     // MARK: Searching
 
     func controlTextDidChange(_ obj: Notification) {
+        queryFromURL = false
         lockKeyphraseIfTyped()
         runSearch()
     }
 
+    /// With a command token there's nothing to search: the only result is "run it with these arguments".
+    private func commandOutput(_ cmd: ShellCommand) -> SearchOutput {
+        SearchOutput(query: effectiveQuery, results: [.command(cmd, args: field.stringValue, score: 0)],
+                     totalMatches: 1, mode: .command)
+    }
+
+    private func searchNow() -> SearchOutput {
+        if let cmd = commandChip { return commandOutput(cmd) }
+        return engine.searchSync(effectiveQuery, context: contextProvider())
+    }
+
     func runSearch() {
+        if let cmd = commandChip { apply(commandOutput(cmd)); return }
         engine.search(effectiveQuery, context: contextProvider()) { [weak self] out in
             guard let self, out.query == self.effectiveQuery else { return }
             self.apply(out)
@@ -606,7 +711,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         case .scoped(let phrase): modeTag.text = "In \(phrase)"; modeTag.style = .accent
         default: modeTag.text = ""
         }
-        if chip != nil && mode != .approximate {
+        if (chip != nil || commandChip != nil) && mode != .approximate {
             modeTag.text = "" // the token itself shows the scope
         }
         switch mode {
@@ -614,6 +719,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         case .none, .approximate: footer.rightText = ""
         default: footer.rightText = totalMatches == 0 ? "" : (totalMatches == 1 ? "1 match" : "\(Fmt.count(totalMatches)) matches")
         }
+        updateFooterHints()
         let q = field.stringValue.trimmed
         let centered = NSMutableParagraphStyle()
         centered.alignment = .center
@@ -648,7 +754,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         modeTag.frame = NSRect(x: W - 18 - tagW, y: sy + (Self.searchH - 18) / 2, width: tagW, height: 18)
         let fieldRight = tagW > 0 ? modeTag.frame.minX - 12 : W - 18
         var fieldX: CGFloat = 52
-        if chip != nil {
+        if chip != nil || commandChip != nil {
             chipView.frame = NSRect(x: 50, y: sy + (Self.searchH - 30) / 2, width: chipView.preferredWidth, height: 30)
             fieldX = chipView.frame.maxX + 8
         }
@@ -677,7 +783,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         if let editor = field.currentEditor() as? NSTextView, editor.hasMarkedText() { return false }
         let flags = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let cmd = flags.contains(.command)
-        if chip != nil, let handled = handleChipKey(e, flags: flags) { return handled }
+        if chip != nil || commandChip != nil, let handled = handleChipKey(e, flags: flags) { return handled }
         switch e.keyCode {
         case 36, 76: activateSelection(open: cmd); return true      // return / enter
         case 53: hide(); return true                                 // esc
@@ -706,8 +812,9 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             if let editor = field.currentEditor(), editor.selectedRange.length > 0 {
                 NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
             } else if selected < results.count {
+                let r = results[selected]
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(results[selected].path, forType: .string)
+                NSPasteboard.general.setString(r.command?.command ?? r.path, forType: .string)
             }
             return true
         default:
@@ -750,6 +857,13 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         guard !results.isEmpty else { return }
         selected = max(0, min(results.count - 1, i))
         for (k, row) in rows.enumerated() { row.isSelected = k == selected }
+        updateFooterHints()
+    }
+
+    /// The footer describes what ↵ will do for the selected row.
+    private func updateFooterHints() {
+        let isCommand = selected < results.count && results[selected].command != nil
+        footer.hints = isCommand ? FooterView.commandHints : FooterView.fileHints
     }
 
     private func move(_ delta: Int) {
@@ -761,6 +875,14 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     private func complete() {
         guard selected < results.count else { return }
         let r = results[selected]
+        if let cmd = r.command {
+            // Tab on a command locks it in, ready for arguments.
+            guard commandChip == nil, !queryFromURL else { return }
+            setCommandChip(cmd)
+            field.stringValue = ""
+            apply(searchNow())
+            return
+        }
         var s: String
         if let dir = chipDir, r.path == dir || r.path.hasPrefix(dir + "/") {
             // Inside a token, complete relative to it: [scr] /Avid Projects/
@@ -778,12 +900,12 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             editor.selectedRange = NSRange(location: (s as NSString).length, length: 0)
         }
         chipSelected = false
-        apply(engine.searchSync(effectiveQuery, context: contextProvider()))
+        apply(searchNow())
     }
 
     private func currentResults() -> [SearchResult] {
         if resultsQuery == effectiveQuery { return results }
-        let out = engine.searchSync(effectiveQuery, context: contextProvider())
+        let out = searchNow()
         apply(out)
         return out.results
     }
@@ -792,6 +914,12 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         let list = currentResults()
         guard selected < list.count else { NSSound.beep(); return }
         let r = list[selected]
+        if let cmd = r.command {
+            guard !queryFromURL || confirmLinkCommand(cmd, args: r.commandArgs) else { return }
+            hide(restoreFocus: !cmd.runInTerminal) // Terminal comes forward; otherwise go back where you were
+            onRunCommand(cmd, r.commandArgs)
+            return
+        }
         guard FileManager.default.fileExists(atPath: r.path) else {
             NSSound.beep()
             emptyLabel.isHidden = true
@@ -802,14 +930,29 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         onActivate(r, open)
     }
 
+    /// A goto:// link filled in this command's keyword: make sure a person, not a web page, wants it run.
+    private func confirmLinkCommand(_ cmd: ShellCommand, args: String) -> Bool {
+        hide()
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Run the “\(cmd.phrase.trimmed)” command?"
+        alert.informativeText = "This search was filled in by a link, not typed by you.\n\n$ \(cmd.command)"
+        alert.addButton(withTitle: "Run")
+        alert.addButton(withTitle: "Cancel")
+        let ok = alert.runModal() == .alertFirstButtonReturn
+        if !ok { NSApp.hide(nil) }
+        return ok
+    }
+
     private func addKeyphrase() {
-        if effectiveQuery.trimmed.isEmpty {
+        if effectiveQuery.trimmed.isEmpty || commandChip != nil {
             hide()
             onAddKeyphrase(nil) // nothing searched for: just open the keyphrase list
             return
         }
         let list = currentResults()
-        guard selected < list.count else { NSSound.beep(); return }
+        guard selected < list.count, list[selected].command == nil else { NSSound.beep(); return }
         let r = list[selected]
         hide()
         onAddKeyphrase(r)
@@ -824,7 +967,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         setChip(nil)
         field.stringValue = query
         lockKeyphraseIfTyped()
-        apply(engine.searchSync(effectiveQuery, context: contextProvider()))
+        apply(searchNow())
         let view = background
         view.layoutSubtreeIfNeeded()
         let scale: CGFloat = 2

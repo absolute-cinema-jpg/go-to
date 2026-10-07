@@ -17,7 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                       historyBonus: history.bonusTable(),
                       recent: history.recent(limit: SearchEngine.maxResults),
                       includeHidden: store.config.includeHidden,
-                      indexSettings: IndexSettings(config: store.config))
+                      indexSettings: IndexSettings(config: store.config),
+                      commands: store.config.commands)
     }
 
     private func makePanel() -> SearchPanelController {
@@ -29,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.openSettings(tab: .keyphrases)
         }
         p.onWillShow = { [unowned self] in self.indexManager.panelWillShow() }
+        p.onRunCommand = { [unowned self] cmd, args in self.run(cmd, args: args) }
         return p
     }
 
@@ -58,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [unowned self] in self.setStatusItemVisible($0) }
             .store(in: &subscriptions)
         store.$config.map(\.keyphrases).removeDuplicates().dropFirst()
+            .sink { [unowned self] _ in DispatchQueue.main.async { self.panel.refreshIfVisible() } }
+            .store(in: &subscriptions)
+        store.$config.map(\.commands).removeDuplicates().dropFirst()
             .sink { [unowned self] _ in DispatchQueue.main.async { self.panel.refreshIfVisible() } }
             .store(in: &subscriptions)
 
@@ -127,6 +132,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private let commands = CommandCenter()
+
+    private func run(_ cmd: ShellCommand, args: String) {
+        commands.run(cmd, args: args)
+    }
+
     private func reveal(_ path: String, enterFolder: Bool) {
         if let failure = FinderRevealer.reveal(path, enterFolder: enterFolder) {
             FinderRevealer.presentError(failure, path: path)
@@ -140,9 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func openSettings(tab: SettingsTab? = nil) {
         if settingsController == nil {
-            settingsController = SettingsWindowController(store: store, index: indexManager) { [unowned self] in
-                self.indexManager.rebuild()
-            }
+            settingsController = SettingsWindowController(store: store, index: indexManager,
+                                                          onRebuild: { [unowned self] in self.indexManager.rebuild() },
+                                                          onRunCommand: { [unowned self] cmd in self.run(cmd, args: "") })
         }
         settingsController?.present(tab: tab)
     }

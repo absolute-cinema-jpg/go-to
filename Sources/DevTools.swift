@@ -2,7 +2,7 @@
 import AppKit
 import CryptoKit
 
-/// `goto-tools --search [--root DIR]... [--kp PHRASE=PATH]... QUERY...`  index + query benchmark
+/// `goto-tools --search [--root DIR]... [--kp PHRASE=PATH]... [--cmd WORD=COMMAND]... QUERY...`  index + query benchmark
 /// `goto-tools --snapshot OUT.png [--root DIR]... [--display-home DIR] [--padded] [--no-user-config] [QUERY]`  render the panel to an image
 /// `goto-tools --make-iconset DIR`  render the app icon
 /// `goto-tools --selftest`  check the security hardening (exit status 1 on failure)
@@ -21,6 +21,7 @@ enum DevTools {
         var queries: [String] = []
         var snapshot: String?
         var keyphrases: [Keyphrase] = []
+        var commands: [ShellCommand] = []
         var padded = false
         var userConfig = true
         var i = 1
@@ -36,6 +37,10 @@ enum DevTools {
                 let parts = args[i + 1].split(separator: "=", maxSplits: 1).map(String.init)
                 if parts.count == 2 { keyphrases.append(Keyphrase(phrase: parts[0], path: parts[1])) }
                 i += 2; continue
+            case "--cmd" where i + 1 < args.count:
+                let parts = args[i + 1].split(separator: "=", maxSplits: 1).map(String.init)
+                if parts.count == 2 { commands.append(ShellCommand(phrase: parts[0], command: parts[1])) }
+                i += 2; continue
             case "--search": i += 1; continue
             default: queries.append(args[i]); i += 1
             }
@@ -44,6 +49,7 @@ enum DevTools {
         var config = userConfig ? ConfigStore.load().0 : AppConfig()
         if !roots.isEmpty { config.searchRoots = roots }
         config.keyphrases += keyphrases
+        config.commands += commands
 
         let t0 = Date()
         guard let index = IndexBuilder.build(IndexSettings(config: config), progress: nil, isCancelled: { false }) else { return }
@@ -60,7 +66,8 @@ enum DevTools {
 
         let engine = SearchEngine()
         let ctx = SearchContext(index: index, keyphrases: config.keyphrases, historyBonus: [:], recent: [],
-                                includeHidden: config.includeHidden, indexSettings: IndexSettings(config: config))
+                                includeHidden: config.includeHidden, indexSettings: IndexSettings(config: config),
+                                commands: config.commands)
 
         if let snapshot {
             _ = NSApplication.shared
@@ -203,6 +210,74 @@ enum DevTools {
         check(LaunchSafety.riskDescription(for: make("run", executable: true)) != nil, "executable file asks first")
         check(LaunchSafety.riskDescription(for: make("Evil.app", dir: true)) != nil, "app outside /Applications asks first")
         check(LaunchSafety.riskDescription(for: "/System/Applications/Calculator.app") == nil, "system app opens without asking")
+
+        print("Shell commands")
+        let marker = tmp.appendingPathComponent("INJECTED").path
+        let hostileArgs = "$(touch \(marker)) `touch \(marker)` ;touch \(marker) 'q\"uo\\te' &&x |y $HOME"
+        let expected = CommandRunner.arguments(from: hostileArgs)
+        let echoCmd = ShellCommand(phrase: "echo", command: #"printf '%s\n' "$@"; printf 'Q=%s\n' "$GOTO_QUERY""#)
+        var outcome: CommandRunner.Outcome?
+        CommandRunner.runInBackground(echoCmd, args: hostileArgs) { outcome = $0 }
+        let deadline = Date().addingTimeInterval(15)
+        while outcome == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        let lines = outcome?.output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) ?? []
+        check(outcome?.succeeded == true && Array(lines.prefix(expected.count)) == expected,
+              "background: arguments arrive as literal $1…$\(expected.count)")
+        check(lines.contains("Q=" + hostileArgs.trimmed), "background: whole text arrives in $GOTO_QUERY")
+        check(!fm.fileExists(atPath: marker), "background: nothing in the arguments was executed")
+
+        let scriptURL = tmp.appendingPathComponent("t.command")
+        try? Data(CommandRunner.terminalScript(echoCmd, args: hostileArgs).utf8).write(to: scriptURL)
+        let zsh = Process()
+        zsh.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        zsh.arguments = [scriptURL.path]
+        let pipe = Pipe()
+        zsh.standardOutput = pipe
+        zsh.standardError = pipe
+        try? zsh.run()
+        zsh.waitUntilExit()
+        let tLines = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        check(Array(tLines.prefix(expected.count)) == expected && tLines.contains("Q=" + hostileArgs.trimmed),
+              "Terminal script: same literal arguments and $GOTO_QUERY")
+        check(!fm.fileExists(atPath: marker), "Terminal script: nothing in the arguments was executed")
+        check(!fm.fileExists(atPath: scriptURL.path), "Terminal script deletes itself")
+
+        var failed: CommandRunner.Outcome?
+        CommandRunner.runInBackground(ShellCommand(phrase: "f", command: "echo oops >&2; exit 3"), args: "") { failed = $0 }
+        while failed == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        check(failed?.status == 3 && failed?.lastLine == "oops", "failing command reports exit code and last line")
+
+        let pidFile = tmp.appendingPathComponent("child.pid").path
+        var stoppedOutcome: CommandRunner.Outcome?
+        let longRunning = CommandRunner.runInBackground(
+            ShellCommand(phrase: "long", command: "sleep 60 & echo $! > \(CommandRunner.shellQuote(pidFile)); wait"),
+            args: "") { stoppedOutcome = $0 }
+        let started = Date()
+        while !fm.fileExists(atPath: pidFile) && Date().timeIntervalSince(started) < 10 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let childPid = pid_t((try? String(contentsOfFile: pidFile))?.trimmed ?? "") ?? 0
+        let commandTree = longRunning.map { CommandRunner.descendants(of: $0.processIdentifier) } ?? []
+        check(childPid > 0 && commandTree.contains(childPid), "process tree includes what the command started")
+        if let p = longRunning { CommandRunner.terminateTree(p.processIdentifier) }
+        while stoppedOutcome == nil && Date().timeIntervalSince(started) < 15 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        check(stoppedOutcome != nil && stoppedOutcome?.succeeded == false, "stop ends the command")
+        var childGone = false
+        for _ in 0..<100 where !childGone {
+            childGone = kill(childPid, 0) != 0
+            if !childGone { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        }
+        check(childGone, "stop also ends processes the command started")
+
+        let cmdCtx = SearchContext(index: nil, keyphrases: [], historyBonus: [:], recent: [], includeHidden: false,
+                                   commands: [ShellCommand(phrase: "flush", command: "true")])
+        let exact = SearchEngine().searchSync("flush", context: cmdCtx)
+        check(exact.mode == .command && exact.results.first?.command?.phrase == "flush", "exact keyword finds the command")
+        check(SearchEngine().searchSync("fls", context: cmdCtx).results.first?.command != nil, "fuzzy keyword finds the command")
 
         print("URL scheme")
         let q = AppDelegate.sanitizedQuery("a\nb\u{0}c\u{7}" + String(repeating: "x", count: 500))

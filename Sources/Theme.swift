@@ -37,6 +37,21 @@ enum Theme {
     static let panelOpacity: CGFloat = 0.9
     static let danger = rgb(0xD04A3F)
 
+    /// Dark "terminal" palette for everything to do with shell commands, set against the light theme.
+    enum Term {
+        static let bg = rgb(0x17191E)
+        static let card = rgb(0x1E2127)
+        static let row = rgb(0x1F2228)
+        static let rowSelected = rgb(0x2B2F37)
+        static let field = rgb(0x111317)
+        static let border = rgb(0x30343D)
+        static let text = rgb(0xE6E8EB)
+        static let text2 = rgb(0x9BA3AE)
+        static let text3 = rgb(0x68707B)
+        /// Terminal green, for the "$" prompt, highlights and focus.
+        static let prompt = rgb(0x7EE787)
+    }
+
     static func caps(_ s: String, size: CGFloat, color: NSColor, weight: NSFont.Weight = .semibold, kern: CGFloat = 1.2) -> NSAttributedString {
         NSAttributedString(string: s.uppercased(), attributes: [
             .font: NSFont.systemFont(ofSize: size, weight: weight),
@@ -60,4 +75,13 @@ extension Color {
     static let gtAccent = Color(nsColor: Theme.accent)
     static let gtDanger = Color(nsColor: Theme.danger)
     static let gtKeycap = Color(nsColor: Theme.keycapBG)
+
+    static let termBG = Color(nsColor: Theme.Term.bg)
+    static let termCard = Color(nsColor: Theme.Term.card)
+    static let termField = Color(nsColor: Theme.Term.field)
+    static let termBorder = Color(nsColor: Theme.Term.border)
+    static let termText = Color(nsColor: Theme.Term.text)
+    static let termText2 = Color(nsColor: Theme.Term.text2)
+    static let termText3 = Color(nsColor: Theme.Term.text3)
+    static let termPrompt = Color(nsColor: Theme.Term.prompt)
 }

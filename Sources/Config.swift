@@ -22,8 +22,35 @@ struct Keyphrase: Codable, Identifiable, Equatable {
     var normalizedPhrase: String { phrase.trimmed.lowercased().nfc }
 }
 
+/// A keyword that runs a shell command instead of going to a file or folder.
+struct ShellCommand: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var phrase: String
+    var command: String
+    /// Open in a Terminal window (to watch output or interact) instead of running silently.
+    var runInTerminal = false
+
+    enum CodingKeys: String, CodingKey { case phrase, command, runInTerminal }
+
+    init(phrase: String, command: String, runInTerminal: Bool = false) {
+        self.phrase = phrase
+        self.command = command
+        self.runInTerminal = runInTerminal
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        phrase = try c.decode(String.self, forKey: .phrase)
+        command = try c.decode(String.self, forKey: .command)
+        runInTerminal = try c.decodeIfPresent(Bool.self, forKey: .runInTerminal) ?? false
+    }
+
+    var normalizedPhrase: String { phrase.trimmed.lowercased().nfc }
+}
+
 struct AppConfig: Codable, Equatable {
     var keyphrases: [Keyphrase] = []
+    var commands: [ShellCommand] = []
     var searchRoots: [String] = ["~", "/Applications"]
     /// Entries containing "/" exclude one specific folder; bare names exclude every folder with that name.
     var excludes: [String] = ["~/Library", "node_modules", "__pycache__", "DerivedData", "Pods", "venv"]
@@ -36,6 +63,7 @@ struct AppConfig: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = AppConfig()
         keyphrases = try c.decodeIfPresent([Keyphrase].self, forKey: .keyphrases) ?? d.keyphrases
+        commands = try c.decodeIfPresent([ShellCommand].self, forKey: .commands) ?? d.commands
         searchRoots = try c.decodeIfPresent([String].self, forKey: .searchRoots) ?? d.searchRoots
         excludes = try c.decodeIfPresent([String].self, forKey: .excludes) ?? d.excludes
         includeHidden = try c.decodeIfPresent(Bool.self, forKey: .includeHidden) ?? d.includeHidden
@@ -47,6 +75,15 @@ struct AppConfig: Codable, Equatable {
         (searchRoots + ["|"] + excludes + [includeHidden ? "hidden" : ""]).joined(separator: "\u{1}")
     }
 
+    /// Keywords used more than once across keyphrases and commands (they share one namespace).
+    var duplicatePhrases: Set<String> {
+        var seen = Set<String>(), dup = Set<String>()
+        for p in keyphrases.map(\.normalizedPhrase) + commands.map(\.normalizedPhrase) where !p.isEmpty {
+            if !seen.insert(p).inserted { dup.insert(p) }
+        }
+        return dup
+    }
+
     func keyphrase(matching phrase: String) -> Keyphrase? {
         let p = phrase.trimmed.lowercased().nfc
         guard !p.isEmpty else { return nil }
@@ -56,6 +93,7 @@ struct AppConfig: Codable, Equatable {
 
 enum SettingsTab: String, CaseIterable {
     case keyphrases = "Keyphrases"
+    case commands = "Commands"
     case index = "Index"
     case general = "General"
 }
@@ -100,6 +138,11 @@ final class ConfigStore: ObservableObject {
     func updateKeyphrase(_ id: UUID, _ change: (inout Keyphrase) -> Void) {
         guard let i = config.keyphrases.firstIndex(where: { $0.id == id }) else { return }
         change(&config.keyphrases[i])
+    }
+
+    func updateCommand(_ id: UUID, _ change: (inout ShellCommand) -> Void) {
+        guard let i = config.commands.firstIndex(where: { $0.id == id }) else { return }
+        change(&config.commands[i])
     }
 
     @discardableResult

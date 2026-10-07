@@ -13,12 +13,26 @@ struct SearchResult {
     var approximate = false
     /// Set for "pph tmp" searches, so locations can be shown relative to the keyphrase.
     var scope: (phrase: String, dir: String)?
+    /// A command keyword rather than a file: running it passes `commandArgs` as arguments.
+    var command: ShellCommand?
+    var commandArgs = ""
+
+    static func command(_ cmd: ShellCommand, args: String = "", score: Int) -> SearchResult {
+        let args = args.trimmed
+        var r = SearchResult(path: "", name: cmd.phrase.trimmed + (args.isEmpty ? "" : " " + args),
+                             isDirectory: false, isPackage: false, keyphrase: nil, score: score)
+        r.command = cmd
+        r.commandArgs = args
+        return r
+    }
 }
 
 enum SearchMode: Equatable {
     case recent, fuzzy, keyphrase, path, approximate, none
     /// "pph tmp": searching inside the folder of keyphrase "pph".
     case scoped(String)
+    /// The query is exactly a command keyword.
+    case command
 }
 
 struct SearchOutput {
@@ -37,6 +51,7 @@ struct SearchContext {
     let includeHidden: Bool
     /// Exclusion rules, applied when scanning a keyphrase folder that isn't in the main index.
     var indexSettings: IndexSettings?
+    var commands: [ShellCommand] = []
 }
 
 final class SearchEngine {
@@ -132,6 +147,21 @@ final class SearchEngine {
                                         isPackage: isPkg, keyphrase: kp.phrase.trimmed, score: score)
         }
 
+        // Command keywords compete like keyphrases; they're keyed apart from paths.
+        var exactCommand = false
+        for cmd in ctx.commands where !cmd.normalizedPhrase.isEmpty && !cmd.command.trimmed.isEmpty {
+            let pb = asciiLower(Array(cmd.normalizedPhrase.utf8))
+            var score: Int
+            if pb == q {
+                score = 1_000_000
+                exactCommand = true
+            } else {
+                guard let s = scoreBytes(q, pb) else { continue }
+                score = 150 + Int(s) + (pb.starts(with: q) ? 100 : 0)
+            }
+            merged["\u{1}command:" + cmd.id.uuidString] = .command(cmd, score: score)
+        }
+
         var total = merged.count
         if let index = ctx.index {
             guard let res = searchIndex(index, q: q, tokens: tokens, ctx: ctx, isCancelled: isCancelled) else { return nil }
@@ -152,7 +182,7 @@ final class SearchEngine {
 
         // Scattered subsequence hits are weak evidence; let close typo matches compete with them.
         let best = merged.values.map(\.score).max() ?? Int.min
-        if !exactKeyphrase && ((merged.isEmpty && q.count >= 2) || (q.count >= 4 && best < 22 * q.count + 20)) {
+        if !exactKeyphrase && !exactCommand && ((merged.isEmpty && q.count >= 2) || (q.count >= 4 && best < 22 * q.count + 20)) {
             for r in approximate(q, ctx, index: ctx.index) where (merged[r.path]?.score ?? Int.min) < r.score {
                 if merged[r.path] == nil { total += 1 }
                 merged[r.path] = r
@@ -162,7 +192,7 @@ final class SearchEngine {
         var results = Array(merged.values)
         results.sort { $0.score != $1.score ? $0.score > $1.score : $0.path.count < $1.path.count }
         results = Array(results.prefix(Self.maxResults))
-        var mode: SearchMode = exactKeyphrase ? .keyphrase : .fuzzy
+        var mode: SearchMode = exactKeyphrase ? .keyphrase : (exactCommand ? .command : .fuzzy)
         if results.isEmpty { mode = .none } else if results[0].approximate { mode = .approximate }
         highlight(&results, q, tokens)
         return SearchOutput(query: rawQuery, results: results, totalMatches: total, mode: mode)

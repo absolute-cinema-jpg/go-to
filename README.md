@@ -1,6 +1,6 @@
 # Go To
 
-A Spotlight-style popup that finds a file or folder and reveals it in Finder. It reuses your most recent Finder window, or opens a new one if none are open.
+A Spotlight-style popup that finds a file or folder and reveals it in Finder. It reuses your most recent Finder window, or opens a new one if none are open. If you use the [AeroSpace](https://github.com/nikitabobko/AeroSpace) tiling window manager, it also switches to the workspace that window is on.
 
 <p align="center">
   <img src="docs/screenshot-search.png" width="680" alt="Go To search panel showing fuzzy matches for “rough cut” across several folders">

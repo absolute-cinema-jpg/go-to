@@ -37,6 +37,7 @@ enum FinderRevealer {
                     select theItem
                 end if
                 activate
+                return name of w
             end tell
         end revealItem
         """
@@ -55,17 +56,19 @@ enum FinderRevealer {
 
     /// Selects `path` in the most recently used Finder window (or a new one if none are open)
     /// and brings Finder to the front. With `enterFolder`, a folder is opened instead of selected.
+    /// On success, returns the title of the window used.
     @discardableResult
-    static func reveal(_ path: String, enterFolder: Bool = false) -> Failure? {
-        guard let script else { return Failure(code: -1, message: "The reveal script could not be compiled.") }
+    static func reveal(_ path: String, enterFolder: Bool = false) -> Result<String, Failure> {
+        guard let script else { return .failure(Failure(code: -1, message: "The reveal script could not be compiled.")) }
         var parent = (path as NSString).deletingLastPathComponent
         if path == "/" { parent = "" }
 
         var error: NSDictionary?
-        callHandler("revealItem", in: script, with: [.init(string: path), .init(string: parent), .init(boolean: enterFolder)], error: &error)
-        guard let error else { return nil }
-        return Failure(code: error[NSAppleScript.errorNumber] as? Int ?? -1,
-                       message: error[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error")
+        let result = callHandler("revealItem", in: script,
+                                 with: [.init(string: path), .init(string: parent), .init(boolean: enterFolder)], error: &error)
+        guard let error else { return .success(result?.stringValue ?? "") }
+        return .failure(Failure(code: error[NSAppleScript.errorNumber] as? Int ?? -1,
+                                message: error[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"))
     }
 
     /// Invokes an AppleScript handler with typed arguments (a kASSubroutineEvent).

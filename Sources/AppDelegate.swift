@@ -139,14 +139,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func reveal(_ path: String, enterFolder: Bool) {
-        if let failure = FinderRevealer.reveal(path, enterFolder: enterFolder) {
+        let title: String
+        switch FinderRevealer.reveal(path, enterFolder: enterFolder) {
+        case .failure(let failure):
             FinderRevealer.presentError(failure, path: path)
             return
+        case .success(let t):
+            title = t
         }
         // The script already activates Finder; this makes sure it ends up frontmost even if
         // another app was mid-activation, with the window we just used on top.
-        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?
-            .activate(options: [.activateIgnoringOtherApps])
+        guard let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first else { return }
+        finder.activate(options: [.activateIgnoringOtherApps])
+        // Under AeroSpace that window may sit on another workspace; switch to it.
+        guard !title.isEmpty else { return }
+        let pid = finder.processIdentifier
+        DispatchQueue.global(qos: .userInitiated).async { AeroSpace.focusFinderWindow(titled: title, finderPID: pid) }
     }
 
     func openSettings(tab: SettingsTab? = nil) {

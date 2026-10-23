@@ -350,6 +350,8 @@ private struct KeyphrasesPane: View {
     @ObservedObject var store: ConfigStore
     @FocusState private var focused: UUID?
     @State private var dropTargeted = false
+    /// A row just added: scrolled into view (it may land anywhere in the sorted list), then focused.
+    @State private var newRow: UUID?
 
     private var duplicates: Set<String> { store.config.duplicatePhrases }
 
@@ -381,18 +383,26 @@ private struct KeyphrasesPane: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        ScrollView {
-                            LazyVStack(spacing: 6) {
-                                // Rows get values plus id-based bindings, never bindings into the array:
-                                // an index-based binding crashes if its row is deleted while being edited.
-                                ForEach(store.config.keyphrases) { kp in
-                                    KeyphraseRow(kp: kp, store: store,
-                                                 isDuplicate: duplicates.contains(kp.normalizedPhrase),
-                                                 focused: $focused,
-                                                 onDelete: { delete(kp.id) })
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                LazyVStack(spacing: 6) {
+                                    // Rows get values plus id-based bindings, never bindings into the array:
+                                    // an index-based binding crashes if its row is deleted while being edited.
+                                    ForEach(store.config.keyphrases) { kp in
+                                        KeyphraseRow(kp: kp, store: store,
+                                                     isDuplicate: duplicates.contains(kp.normalizedPhrase),
+                                                     focused: $focused,
+                                                     onDelete: { delete(kp.id) })
+                                    }
                                 }
+                                .padding(.horizontal, 14).padding(.bottom, 12)
                             }
-                            .padding(.horizontal, 14).padding(.bottom, 12)
+                            .onChange(of: newRow) { id in
+                                guard let id else { return }
+                                newRow = nil
+                                proxy.scrollTo(id)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focused = id }
+                            }
                         }
                     }
                 }
@@ -405,10 +415,7 @@ private struct KeyphrasesPane: View {
                 for p in providers {
                     _ = p.loadObject(ofClass: URL.self) { url, _ in
                         guard let url else { return }
-                        DispatchQueue.main.async {
-                            let id = store.addKeyphrase(path: url.path)
-                            focused = id
-                        }
+                        DispatchQueue.main.async { newRow = store.addKeyphrase(path: url.path) }
                     }
                 }
                 return true
@@ -417,7 +424,7 @@ private struct KeyphrasesPane: View {
             HStack {
                 Button {
                     if let path = choosePath(startingAt: nil) {
-                        focused = store.addKeyphrase(path: path)
+                        newRow = store.addKeyphrase(path: path)
                     }
                 } label: { Label("Add Keyphrase", systemImage: "plus") }
                     .buttonStyle(GTButtonStyle(prominent: true))
@@ -428,8 +435,12 @@ private struct KeyphrasesPane: View {
             }
         }
         .padding(20)
-        .onAppear(perform: consumePendingFocus)
+        .onAppear {
+            store.sortKeyphrases()
+            consumePendingFocus()
+        }
         .onChange(of: store.focusKeyphraseID) { _ in consumePendingFocus() }
+        .onChange(of: focused) { _ in store.sortKeyphrases() } // finished editing a keyword
     }
 
     private func delete(_ id: UUID) {
@@ -440,7 +451,7 @@ private struct KeyphrasesPane: View {
     private func consumePendingFocus() {
         guard let id = store.focusKeyphraseID else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            focused = id
+            newRow = id
             store.focusKeyphraseID = nil
         }
     }
@@ -644,6 +655,8 @@ private struct GeneralPane: View {
     @State private var loginError: String?
     @State private var copied = false
     static let command = "open -g goto://toggle"
+    @State private var accessibilityTrusted = FileDialog.isTrusted
+    private let trustTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var commandRow: some View {
         HStack(spacing: 8) {
@@ -712,9 +725,39 @@ private struct GeneralPane: View {
                     .padding(14)
                 }
 
+                GTSection("Open & Save Dialogs") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(isOn: $store.config.useFileDialogs) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Go to items inside open and save dialogs").font(.system(size: 12.5)).foregroundColor(.gtText)
+                                Text("When the app you were in has an Open or Save dialog in front, ↵ takes that dialog to the item instead of Finder.")
+                                    .font(.system(size: 11)).foregroundColor(.gtText3).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .toggleStyle(GTToggleStyle())
+                        if store.config.useFileDialogs {
+                            Rectangle().fill(Color.gtEtchDark).frame(height: 1)
+                            HStack(spacing: 10) {
+                                Image(systemName: accessibilityTrusted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                                    .foregroundColor(accessibilityTrusted ? .gtAccent : .gtDanger)
+                                Text(accessibilityTrusted ? "Accessibility access granted"
+                                                          : "Needs Accessibility access to control dialogs")
+                                    .font(.system(size: 12)).foregroundColor(.gtText2)
+                                Spacer()
+                                if !accessibilityTrusted {
+                                    Button("Grant Access…") { FileDialog.requestAccess() }
+                                        .buttonStyle(GTButtonStyle())
+                                }
+                            }
+                        }
+                    }
+                    .padding(14)
+                }
+                .onReceive(trustTimer) { _ in accessibilityTrusted = FileDialog.isTrusted }
+
                 GTSection("Keys in the search panel") {
                     VStack(alignment: .leading, spacing: 7) {
-                        keyRow("↵", "Reveal and select in Finder")
+                        keyRow("↵", "Reveal and select in Finder (or in an open/save dialog)")
                         keyRow("⌘↵", "Open — enter the folder, or open the file")
                         keyRow("⇥", "Complete path to drill into a folder")
                         keyRow("↑ ↓", "Move selection   (also ⌃N / ⌃P)")
@@ -803,6 +846,8 @@ private struct CommandsPane: View {
     @State private var draftCommand = ""
     @State private var draftTerminal = false
     @State private var draftCommandFocusRequest = 0
+    /// A command just added: scrolled into view, since the sorted list may put it anywhere.
+    @State private var newRow: UUID?
 
     private enum DraftField { case phrase }
 
@@ -873,18 +918,25 @@ private struct CommandsPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 20)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 6) {
-                            // Value rows with id-based bindings (see KeyphrasesPane for why).
-                            ForEach(store.config.commands) { cmd in
-                                CommandRow(cmd: cmd, store: store,
-                                           isDuplicate: store.config.duplicatePhrases.contains(cmd.normalizedPhrase),
-                                           focused: $focused,
-                                           onRun: { onRun(cmd) },
-                                           onDelete: { delete(cmd.id) })
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 6) {
+                                // Value rows with id-based bindings (see KeyphrasesPane for why).
+                                ForEach(store.config.commands) { cmd in
+                                    CommandRow(cmd: cmd, store: store,
+                                               isDuplicate: store.config.duplicatePhrases.contains(cmd.normalizedPhrase),
+                                               focused: $focused,
+                                               onRun: { onRun(cmd) },
+                                               onDelete: { delete(cmd.id) })
+                                }
                             }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
                         }
-                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .onChange(of: newRow) { id in
+                            guard let id else { return }
+                            newRow = nil
+                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id) }
+                        }
                     }
                 }
             }
@@ -904,13 +956,19 @@ private struct CommandsPane: View {
         }
         .padding(20)
         .background(Color.termBG)
-        .onAppear { if store.config.commands.isEmpty { draftFocus = .phrase } }
+        .onAppear {
+            store.sortCommands()
+            if store.config.commands.isEmpty { draftFocus = .phrase }
+        }
+        .onChange(of: focused) { _ in store.sortCommands() } // finished editing a keyword
     }
 
     private func addDraft() {
         guard canAddDraft else { return }
-        store.config.commands.append(ShellCommand(phrase: draftPhrase.trimmed, command: draftCommand.trimmed,
-                                                  runInTerminal: draftTerminal))
+        let cmd = ShellCommand(phrase: draftPhrase.trimmed, command: draftCommand.trimmed, runInTerminal: draftTerminal)
+        store.config.commands.append(cmd)
+        store.sortCommands()
+        newRow = cmd.id
         draftPhrase = ""
         draftCommand = ""
         draftTerminal = false

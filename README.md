@@ -2,6 +2,8 @@
 
 A Spotlight-style popup that finds a file or folder and reveals it in Finder. It reuses your most recent Finder window, or opens a new one if none are open. If you use the [AeroSpace](https://github.com/nikitabobko/AeroSpace) tiling window manager, it also switches to the workspace that window is on.
 
+If the app you were in has an **Open or Save dialog** in front (say, saving an email attachment), Go To takes that dialog to the item instead: a folder is opened in the dialog, and a file is selected (in a save dialog, its folder is opened and the name you've typed is kept).
+
 <p align="center">
   <img src="docs/screenshot-search.png" width="680" alt="Go To search panel showing fuzzy matches for “rough cut” across several folders">
 </p>
@@ -34,8 +36,9 @@ On first launch macOS asks for:
 - **Desktop / Documents / Downloads** access, so those folders can be indexed. You can grant Full Disk Access instead.
 - **Automation → Finder** the first time you reveal something. This lets the app select items in Finder.
 - **Keychain** access for "Go To storage key". This key encrypts the saved index and history.
+- **Accessibility** (optional), only if you want Go To to work inside open and save dialogs. Grant it from **Settings › General**. Without it, results always open in Finder.
 
-The app is ad-hoc signed (no developer certificate), so after a rebuild macOS may ask for these again. For the keychain prompt, choose **Always Allow**.
+The app is ad-hoc signed (no developer certificate), so after a rebuild macOS may ask for these again. For the keychain prompt, choose **Always Allow**. Accessibility doesn't ask again: if dialogs stop working after a rebuild, remove Go To from **System Settings › Privacy & Security › Accessibility** and grant it again.
 
 ## Opening Go To
 
@@ -63,7 +66,7 @@ macOS Shortcuts, Keyboard Maestro, Raycast, BetterTouchTool and similar apps can
 
 Items you open often are ranked higher. When the box is empty, it shows your recent items.
 
-**Keys:** ↵ reveal · ⌘↵ open (enter the folder, or open the file) · ⇥ complete the path · ↑↓ / ⌃N ⌃P move · ⌘1–8 reveal that result · ⌘K add a keyphrase for the selected result · ⌘C copy the path · ⌘, settings · esc close
+**Keys:** ↵ reveal (in Finder, or in the open/save dialog in front) · ⌘↵ open (enter the folder, or open the file) · ⇥ complete the path · ↑↓ / ⌃N ⌃P move · ⌘1–8 reveal that result · ⌘K add a keyphrase for the selected result · ⌘C copy the path · ⌘, settings · esc close
 
 ## Settings
 
@@ -71,7 +74,7 @@ The settings window has four sections:
 - **Keyphrases:** add, edit or remove them, or drop files and folders onto the list. Type or paste a target path directly (`~` works), or pick one with **Choose…**.
 - **Commands:** keywords that run shell commands. Type a keyword and a command into the top row and press ↵ to add one. Each runs in the background (a notice appears only if it fails; click it to copy the output) or in a Terminal window. Commands can span several lines (⇧↵ for a new line). While a background command runs, a stop button appears in the menu bar; clicking it ends the command and everything it started. Arguments typed after the keyword arrive as `$1`, `$2`… (`"$@"`), with the whole text in `$GOTO_QUERY`. Commands run in zsh as you, from your home folder.
 - **Index:** choose search locations and exclusions (by folder name like `node_modules`, or by path like `~/Library`). You can also include hidden files and rebuild the index.
-- **General:** menu bar icon, launch at login, and the hotkey command.
+- **General:** the hotkey command, open and save dialogs, menu bar icon and launch at login.
 
 Settings are stored as plain JSON at `~/Library/Application Support/GoTo/config.json`. The encrypted index cache (`index.enc`) and history (`history.enc`) are stored in the same folder.
 
@@ -89,6 +92,7 @@ The index is built in the background with `fts`, cached to disk, and rescanned a
 | Any app or web page can send `goto://` URLs | URLs can only show or hide UI, pre-fill a query (control characters stripped, 200-character cap) or request a reindex (at most once a minute). Unknown actions are ignored. |
 | Text typed after a command keyword turning into extra shell commands | Arguments are never spliced into the command line: they're passed as separate argv entries (or single-quoted into `set --` for Terminal), so `$(…)`, `;` and backticks stay literal. |
 | A link running a command | `goto://` links can't lock in a command or supply arguments, and running a command whose keyword came from a link asks for confirmation. |
+| Accessibility permission lets an app read other apps' windows and send keystrokes | It's optional and only used when you press ↵ on a result: Go To checks whether the app you were in has an Open or Save dialog in front (by the dialog's identifier) and, if so, types the item's path into that dialog's Go to Folder field. It never reads window contents, and `goto://` links can't trigger it. |
 | A corrupted or forged index cache | Every entry is bounds- and structure-checked on load. Anything malformed is discarded and rebuilt. |
 
 `config.json` stays plain text so you can edit it, but it is owner-only.

@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsController: SettingsWindowController?
     private var statusItem: NSStatusItem?
     private var subscriptions: Set<AnyCancellable> = []
+    /// The app in front when the search panel opened: an open or save dialog there gets the result.
+    private var appBeforePanel: NSRunningApplication?
 
     func makeSearchContext() -> SearchContext {
         SearchContext(index: indexManager.index,
@@ -29,7 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let result { self.store.focusKeyphraseID = self.store.addKeyphrase(path: result.path) }
             self.openSettings(tab: .keyphrases)
         }
-        p.onWillShow = { [unowned self] in self.indexManager.panelWillShow() }
+        p.onWillShow = { [unowned self] in
+            self.indexManager.panelWillShow()
+            let front = NSWorkspace.shared.frontmostApplication
+            self.appBeforePanel = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
+        }
         p.onRunCommand = { [unowned self] cmd, args in self.run(cmd, args: args) }
         return p
     }
@@ -126,6 +132,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 NSWorkspace.shared.open(URL(fileURLWithPath: result.path))
+                return
+            }
+            if self.store.config.useFileDialogs, let app = self.appBeforePanel, !app.isTerminated,
+               let kind = FileDialog.frontDialog(of: app.processIdentifier) {
+                FileDialog.navigate(app: app, kind: kind, to: result.path, isDirectory: result.isDirectory) { ok in
+                    if !ok { NSSound.beep() }
+                }
                 return
             }
             self.reveal(result.path, enterFolder: open)

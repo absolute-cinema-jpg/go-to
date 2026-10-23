@@ -56,6 +56,8 @@ struct AppConfig: Codable, Equatable {
     var excludes: [String] = ["~/Library", "node_modules", "__pycache__", "DerivedData", "Pods", "venv"]
     var includeHidden = false
     var showMenuBarIcon = true
+    /// Go to the chosen item inside an open or save dialog when one is in front (needs Accessibility).
+    var useFileDialogs = true
 
     init() {}
 
@@ -68,6 +70,7 @@ struct AppConfig: Codable, Equatable {
         excludes = try c.decodeIfPresent([String].self, forKey: .excludes) ?? d.excludes
         includeHidden = try c.decodeIfPresent(Bool.self, forKey: .includeHidden) ?? d.includeHidden
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? d.showMenuBarIcon
+        useFileDialogs = try c.decodeIfPresent(Bool.self, forKey: .useFileDialogs) ?? d.useFileDialogs
     }
 
     /// Anything that changes what ends up in the file index.
@@ -150,7 +153,26 @@ final class ConfigStore: ObservableObject {
         let display = path.abbreviatingHome
         let kp = Keyphrase(phrase: phrase ?? suggestPhrase(for: display), path: display)
         config.keyphrases.append(kp)
+        sortKeyphrases()
         return kp.id
+    }
+
+    /// Alphabetical by keyword (numbers in natural order), blank keywords last. Settings calls these
+    /// when nothing is being typed, so a row never moves under the cursor.
+    func sortKeyphrases() {
+        let sorted = config.keyphrases.sorted { Self.phraseOrder($0.phrase, $1.phrase) }
+        if sorted.map(\.id) != config.keyphrases.map(\.id) { config.keyphrases = sorted }
+    }
+
+    func sortCommands() {
+        let sorted = config.commands.sorted { Self.phraseOrder($0.phrase, $1.phrase) }
+        if sorted.map(\.id) != config.commands.map(\.id) { config.commands = sorted }
+    }
+
+    private static func phraseOrder(_ a: String, _ b: String) -> Bool {
+        let a = a.trimmed, b = b.trimmed
+        if a.isEmpty != b.isEmpty { return b.isEmpty }
+        return a.localizedStandardCompare(b) == .orderedAscending
     }
 
     /// Initials of the item's name ("phil's project" -> "pp"), made unique.

@@ -61,7 +61,10 @@ enum FinderRevealer {
     static func reveal(_ path: String, enterFolder: Bool = false) -> Result<String, Failure> {
         guard let script else { return .failure(Failure(code: -1, message: "The reveal script could not be compiled.")) }
         var parent = (path as NSString).deletingLastPathComponent
-        if path == "/" { parent = "" }
+        // Selecting a drive (e.g. /Volumes/External) makes Finder open it in a window of its own,
+        // so show its contents in the reused window instead.
+        let isVolume = (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isVolumeKey]))?.isVolume ?? false
+        if path == "/" || isVolume { parent = "" }
 
         var error: NSDictionary?
         let result = callHandler("revealItem", in: script,

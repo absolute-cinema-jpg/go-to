@@ -25,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makePanel() -> SearchPanelController {
         let p = SearchPanelController(engine: engine) { [unowned self] in self.makeSearchContext() }
-        p.onActivate = { [unowned self] result, open in self.activate(result, open: open) }
+        p.onActivate = { [unowned self] result, open, fromLink in self.activate(result, open: open, fromLink: fromLink) }
         p.onSettings = { [unowned self] in self.openSettings() }
         p.onAddKeyphrase = { [unowned self] result in
             if let result { self.store.focusKeyphraseID = self.store.addKeyphrase(path: result.path) }
@@ -120,11 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Actions
 
-    private func activate(_ result: SearchResult, open: Bool) {
+    /// `fromLink`: the search text came from a goto:// link, not typing, so risky files ask before opening.
+    private func activate(_ result: SearchResult, open: Bool, fromLink: Bool) {
         history.record(result.path)
         DispatchQueue.main.async {
             if open && !result.isDirectory {
-                if let risk = LaunchSafety.riskDescription(for: result.path) {
+                if fromLink, let risk = LaunchSafety.riskDescription(for: result.path) {
                     switch LaunchSafety.confirm(path: result.path, risk: risk) {
                     case .open: break
                     case .reveal: self.reveal(result.path, enterFolder: false); return

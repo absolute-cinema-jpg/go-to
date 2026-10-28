@@ -64,7 +64,7 @@ macOS Shortcuts, Keyboard Maestro, Raycast, BetterTouchTool and similar apps can
 
 | `deploy` (a command keyword) | ↵ runs its shell command. `deploy` + space locks it in (`[$ deploy] staging`); the rest is passed as arguments. |
 
-Items you open often are ranked higher. When the box is empty, it shows your recent items.
+Items you open often are ranked higher. Until you type something, the panel is just the search bar. It opens centred on the screen with the mouse pointer; drag it by its header to move it, and it stays there (**Settings › General › Centre** puts it back).
 
 **Keys:** ↵ reveal (in Finder, or in the open/save dialog in front) · ⌘↵ open (enter the folder, or open the file) · ⇥ complete the path · ↑↓ / ⌃N ⌃P move · ⌘1–8 reveal that result · ⌘K add a keyphrase for the selected result · ⌘C copy the path · ⌘, settings · esc close
 
@@ -88,7 +88,7 @@ The index is built in the background with `fts`, cached to disk, and rescanned a
 | Developer commands could be used to make the app list files with its permissions | They live only in `build/goto-tools`. `GoTo.app` ignores command-line arguments. |
 | Other processes injecting code to borrow Go To's folder access and Finder control | Signed with the hardened runtime (`DYLD_*` injection is blocked). The only entitlement is Apple Events. |
 | AppleScript injection through crafted file names | Paths are passed to a precompiled handler as Apple event parameters and never spliced into script text. |
-| A malicious file ranking first and being run with ⌘↵ | Apps, scripts, installers and executables need confirmation, except apps in `/Applications` or `/System` that aren't quarantined. |
+| A web page pre-filling a search (`goto://show?q=…`) so that a malicious file ranks first and gets run with ⌘↵ | When the search text came from a link rather than typing, apps, scripts, installers and executables need confirmation (except apps in `/Applications` or `/System` that aren't quarantined). Anything you type opens straight away. |
 | Any app or web page can send `goto://` URLs | URLs can only show or hide UI, pre-fill a query (control characters stripped, 200-character cap) or request a reindex (at most once a minute). Unknown actions are ignored. |
 | Text typed after a command keyword turning into extra shell commands | Arguments are never spliced into the command line: they're passed as separate argv entries (or single-quoted into `set --` for Terminal), so `$(…)`, `;` and backticks stay literal. |
 | A link running a command | `goto://` links can't lock in a command or supply arguments, and running a command whose keyword came from a link asks for confirmation. |

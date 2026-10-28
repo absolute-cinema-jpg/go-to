@@ -18,6 +18,7 @@ final class SearchPanel: NSPanel {
         animationBehavior = .none
         isReleasedWhenClosed = false
         appearance = NSAppearance(named: .aqua)
+        isMovableByWindowBackground = true // drag by the header (or any background) to reposition
     }
 
     override var canBecomeKey: Bool { true }
@@ -425,6 +426,12 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     private var selected = 0
     private var anchorTop: CGFloat = 0
     private var anchorX: CGFloat = 0
+    /// The visible frame of the screen the panel opened on, to keep it on screen as it grows.
+    private var screenFrame: NSRect?
+    /// Set while we move the panel ourselves, so only the user's drags are remembered.
+    private var isPlacing = false
+    /// Where the user dragged the panel: [centre x, top] as fractions of the screen, so it carries across screens.
+    static let positionKey = "panelPosition"
     private var didActivateApp = false
     private var mouseMonitor: Any?
 
@@ -440,7 +447,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
 
     let engine: SearchEngine
     var contextProvider: () -> SearchContext
-    var onActivate: (SearchResult, Bool) -> Void = { _, _ in }
+    var onActivate: (SearchResult, Bool, Bool) -> Void = { _, _, _ in } // result, open, text came from a link
     var onSettings: () -> Void = {}
     var onAddKeyphrase: (SearchResult?) -> Void = { _ in }
     var onWillShow: () -> Void = {}
@@ -587,10 +594,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         onWillShow()
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        if let vf = screen?.visibleFrame {
-            anchorX = round(vf.midX - Self.width / 2)
-            anchorTop = round(vf.maxY - vf.height * 0.2)
-        }
+        if let vf = screen?.visibleFrame { placeAnchors(in: vf) }
         // Every opening starts fresh: no token, no leftover text (or just the query from a goto://show?q= link).
         setChip(nil)
         queryFromURL = query != nil
@@ -640,6 +644,31 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
 
     func windowDidResignKey(_ notification: Notification) { hide() }
 
+    /// Centred search bar by default (results grow downward from it), or where the user last dragged it.
+    private func placeAnchors(in vf: NSRect) {
+        screenFrame = vf
+        let barH = Self.headerH + Self.searchH
+        var midX = vf.midX, top = vf.midY + barH / 2
+        if let p = UserDefaults.standard.array(forKey: Self.positionKey) as? [Double], p.count == 2,
+           p.allSatisfy({ $0.isFinite }) {
+            midX = vf.minX + vf.width * CGFloat(p[0])
+            top = vf.minY + vf.height * CGFloat(p[1])
+        }
+        anchorX = round(min(max(midX - Self.width / 2, vf.minX), vf.maxX - Self.width))
+        anchorTop = round(min(max(top, vf.minY + barH), vf.maxY))
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard !isPlacing, panel.isVisible else { return }
+        let f = panel.frame
+        anchorX = f.minX
+        anchorTop = f.maxY
+        guard let vf = panel.screen?.visibleFrame ?? screenFrame, vf.width > 0, vf.height > 0 else { return }
+        screenFrame = vf
+        UserDefaults.standard.set([Double((f.midX - vf.minX) / vf.width), Double((f.maxY - vf.minY) / vf.height)],
+                                  forKey: Self.positionKey)
+    }
+
     @objc private func otherAppActivated(_ note: Notification) {
         let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
         if app?.processIdentifier != ProcessInfo.processInfo.processIdentifier { hide() }
@@ -683,8 +712,11 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
     /// Refresh results after the index or keyphrases change, if the panel is open.
     func refreshIfVisible() { if isVisible { runSearch() } }
 
+    /// Nothing typed and no token: the panel is just the search bar.
+    private var isBlank: Bool { field.stringValue.trimmed.isEmpty && chip == nil && commandChip == nil }
+
     private func apply(_ out: SearchOutput) {
-        results = out.results
+        results = isBlank ? [] : out.results
         if let chip, let dir = chipDir {
             // Show locations relative to the token, e.g. "scr › Avid Projects".
             for k in results.indices where results[k].scope == nil {
@@ -736,12 +768,17 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         let listH: CGFloat = !results.isEmpty
             ? Self.listPad * 2 + CGFloat(results.count) * ResultRowView.height
             : (showEmpty ? Self.emptyH : 0)
-        let H = Self.headerH + Self.searchH + (listH > 0 ? 1 + listH : 0) + Self.footerH
-        panel.setFrame(NSRect(x: anchorX, y: anchorTop - H, width: W, height: H), display: false)
+        let footerH = isBlank ? 0 : Self.footerH
+        let H = Self.headerH + Self.searchH + (listH > 0 ? 1 + listH : 0) + footerH
+        var y = anchorTop - H
+        if let vf = screenFrame, y < vf.minY { y = vf.minY } // results would run off the bottom: lift it
+        isPlacing = true
+        panel.setFrame(NSRect(x: anchorX, y: y, width: W, height: H), display: false)
+        isPlacing = false
         blur.frame = NSRect(x: 0, y: 0, width: W, height: H)
         background.frame = blur.bounds
         background.headerHeight = Self.headerH
-        background.footerHeight = Self.footerH
+        background.footerHeight = footerH
         background.separatorY = listH > 0 ? Self.headerH + Self.searchH : nil
 
         titleLabel.frame = NSRect(x: 30, y: (Self.headerH - 13) / 2, width: 120, height: 13)
@@ -767,7 +804,8 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
         }
         emptyLabel.isHidden = !showEmpty
         emptyLabel.frame = NSRect(x: 20, y: listTop + (Self.emptyH - 17) / 2, width: W - 40, height: 17)
-        footer.frame = NSRect(x: 0, y: H - Self.footerH, width: W, height: Self.footerH)
+        footer.isHidden = footerH == 0
+        footer.frame = NSRect(x: 0, y: H - footerH, width: W, height: footerH)
 
         background.needsDisplay = true
         footer.needsDisplay = true
@@ -927,7 +965,7 @@ final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelega
             return
         }
         hide(restoreFocus: false)
-        onActivate(r, open)
+        onActivate(r, open, queryFromURL)
     }
 
     /// A goto:// link filled in this command's keyword: make sure a person, not a web page, wants it run.

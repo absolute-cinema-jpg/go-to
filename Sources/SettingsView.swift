@@ -704,6 +704,17 @@ private struct GeneralPane: View {
                         }
                         .toggleStyle(GTToggleStyle())
                         Rectangle().fill(Color.gtEtchDark).frame(height: 1)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Search panel position").font(.system(size: 12.5)).foregroundColor(.gtText)
+                                Text("Drag the panel by its header to move it. Go To remembers where you put it.")
+                                    .font(.system(size: 11)).foregroundColor(.gtText3)
+                            }
+                            Spacer()
+                            Button("Centre") { UserDefaults.standard.removeObject(forKey: SearchPanelController.positionKey) }
+                                .buttonStyle(GTButtonStyle())
+                        }
+                        Rectangle().fill(Color.gtEtchDark).frame(height: 1)
                         if LoginItem.isSupported {
                             Toggle(isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin)) {
                                 VStack(alignment: .leading, spacing: 2) {
